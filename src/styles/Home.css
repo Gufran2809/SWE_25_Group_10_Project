@@ -1,0 +1,32 @@
+.home {
+    padding: 2rem;
+    text-align: center;
+  }
+  
+  .home h1 {
+    font-size: 2.5rem;
+    color: #1a3c34;
+  }
+  
+  .home p {
+    font-size: 1.2rem;
+    color: #555;
+  }
+  
+  .match-list {
+    margin-top: 2rem;
+  }
+  
+  .match-card {
+    background-color: white;
+    border-radius: 8px;
+    padding: 1rem;
+    margin: 1rem auto;
+    max-width: 500px;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+  }
+  
+  .match-card h3 {
+    margin: 0;
+    color: #1a3c34;
+  }

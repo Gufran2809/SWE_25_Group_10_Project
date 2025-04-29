@@ -11,7 +11,7 @@ const LiveStream = () => {
       <Typography variant="body1" color="textSecondary" sx={{ mb: 3 }}>
         Watch live matches with real-time commentary.
       </Typography>
-      <LiveStreaming matchId={1} /> {/* Replace with dynamic matchId */}
+      <LiveStreaming matchId="1" />
     </Container>
   );
 };

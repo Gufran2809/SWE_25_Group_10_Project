@@ -9,7 +9,7 @@ const Leagues = () => {
         Leagues
       </Typography>
       <Typography variant="body1" color="textSecondary" sx={{ mb: 3 }}>
-        Create and manage leagues for tournaments.
+        Manage cricket leagues and tournaments.
       </Typography>
       <LeagueManagement />
     </Container>

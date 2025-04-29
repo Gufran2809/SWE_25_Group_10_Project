@@ -10,6 +10,8 @@ import {
   TextField,
   MenuItem,
 } from '@mui/material';
+import { db } from '../firebase';
+import { collection, query, where, getDocs } from 'firebase/firestore';
 
 const PlayerProfiles = () => {
   const [players, setPlayers] = useState([]);
@@ -19,37 +21,46 @@ const PlayerProfiles = () => {
   useEffect(() => {
     const fetchPlayers = async () => {
       try {
-        const response = await fetch(`http://localhost:5001/api/playersfilter`);
-        const mockData = [
+        let q = collection(db, 'players');
+        if (filter.team || filter.role) {
+          q = query(
+            q,
+            ...(filter.team ? [where('team', '==', filter.team)] : []),
+            ...(filter.role ? [where('role', '==', filter.role)] : [])
+          );
+        }
+        const snapshot = await getDocs(q);
+        const playersData = snapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() }));
+        setPlayers(playersData);
+      } catch (error) {
+        console.error('Error fetching players:', error);
+        setPlayers([
           {
-            id: 1,
+            id: '1',
             name: 'John Doe',
             team: 'Team A',
             role: 'Batsman',
             stats: { matches: 10, runs: 450, wickets: 2, average: 45.0 },
           },
           {
-            id: 2,
+            id: '2',
             name: 'Jane Smith',
             team: 'Team B',
             role: 'Bowler',
             stats: { matches: 8, runs: 50, wickets: 15, average: 20.5 },
           },
           {
-            id: 3,
+            id: '3',
             name: 'Mike Brown',
             team: 'Team A',
             role: 'All-Rounder',
             stats: { matches: 9, runs: 300, wickets: 10, average: 33.3 },
           },
-        ];
-        setPlayers(mockData);
-      } catch (error) {
-        console.error('Error fetching players:', error);
+        ]);
       }
     };
     fetchPlayers();
-  }, []);
+  }, [filter]);
 
   const handlePlayerClick = (player) => {
     setSelectedPlayer(player);
@@ -58,14 +69,8 @@ const PlayerProfiles = () => {
   const handleFilterChange = (e) => {
     const { name, value } = e.target;
     setFilter({ ...filter, [name]: value });
-    setSelectedPlayer(null); // Reset selection on filter change
+    setSelectedPlayer(null);
   };
-
-  const filteredPlayers = players.filter(
-    (player) =>
-      (!filter.team || player.team === filter.team) &&
-      (!filter.role || player.role === filter.role)
-  );
 
   return (
     <Box sx={{ px: 2 }}>
@@ -73,7 +78,6 @@ const PlayerProfiles = () => {
         Player Profiles
       </Typography>
       <Box sx={{ maxWidth: 900, mx: 'auto' }}>
-        {/* Filters */}
         <Box sx={{ display: 'flex', gap: 2, mb: 3 }}>
           <TextField
             label="Filter by Team"
@@ -101,15 +105,14 @@ const PlayerProfiles = () => {
             <MenuItem value="All-Rounder">All-Rounder</MenuItem>
           </TextField>
         </Box>
-        {/* Player List and Details */}
         <Box sx={{ display: 'flex', gap: 3 }}>
           <Box sx={{ width: '33%' }}>
             <Typography variant="h3" color="primary" gutterBottom>
               Players
             </Typography>
-            {filteredPlayers.length > 0 ? (
+            {players.length > 0 ? (
               <List>
-                {filteredPlayers.map((player) => (
+                {players.map((player) => (
                   <ListItem
                     key={player.id}
                     onClick={() => handlePlayerClick(player)}

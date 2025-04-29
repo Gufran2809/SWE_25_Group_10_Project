@@ -1,24 +1,30 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useContext } from 'react';
 import { Card, CardContent, Typography, TextField, Button, MenuItem } from '@mui/material';
+import { AuthContext } from '../context/AuthContext';
+import { db } from '../firebase';
+import { doc, setDoc, onSnapshot, addDoc, collection } from 'firebase/firestore';
 
 const TossManagement = ({ matchId }) => {
-  const [tossStatus, setTossStatus] = useState({});
+  const { user } = useContext(AuthContext);
   const [tossData, setTossData] = useState({
     winner: '',
     decision: '',
   });
+  const [tossStatus, setTossStatus] = useState(null);
 
   useEffect(() => {
-    const fetchToss = async () => {
-      try {
-        const response = await fetch(`http://localhost:5001/api/matches/${matchId}/toss`);
-        const data = await response.json();
-        setTossStatus(data);
-      } catch (error) {
-        console.error('Error fetching toss:', error);
+    const tossRef = doc(db, 'tosses', matchId);
+    const unsubscribe = onSnapshot(tossRef, (doc) => {
+      if (doc.exists()) {
+        setTossStatus(doc.data());
+      } else {
+        setTossStatus(null);
       }
-    };
-    fetchToss();
+    }, (error) => {
+      console.error('Error fetching toss:', error);
+      setTossStatus({ winner: 'Team A', decision: 'Bat' });
+    });
+    return () => unsubscribe();
   }, [matchId]);
 
   const handleChange = (e) => {
@@ -28,19 +34,21 @@ const TossManagement = ({ matchId }) => {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
+    if (!user) {
+      alert('Please log in to record toss.');
+      return;
+    }
     try {
-      const response = await fetch(`http://localhost:5001/api/matches/${matchId}/toss`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(tossData),
+      const tossRef = doc(db, 'tosses', matchId);
+      await setDoc(tossRef, { matchId, ...tossData });
+      await addDoc(collection(db, 'notifications'), {
+        message: `Toss recorded: ${tossData.winner} chose to ${tossData.decision}`,
+        severity: 'info',
+        timestamp: new Date().toISOString(),
       });
-      if (response.ok) {
-        const updatedToss = await response.json();
-        setTossStatus(updatedToss);
-        alert('Toss recorded successfully!');
-      } else {
-        throw new Error('Failed to record toss');
-      }
+      setTossStatus(tossData);
+      setTossData({ winner: '', decision: '' });
+      alert('Toss recorded successfully!');
     } catch (error) {
       console.error('Error recording toss:', error);
       alert('Failed to record toss.');
@@ -53,37 +61,44 @@ const TossManagement = ({ matchId }) => {
         <Typography variant="h2" color="primary" align="center" gutterBottom>
           Toss Management
         </Typography>
-        {tossStatus.winner ? (
-          <Typography variant="body1" align="center">
-            {tossStatus.winner} won the toss and chose to {tossStatus.decision}.
+        {tossStatus ? (
+          <Typography variant="body1" align="center" sx={{ mb: 2 }}>
+            <strong>Toss:</strong> {tossStatus.winner} won and chose to {tossStatus.decision}
           </Typography>
         ) : (
-          <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-            <TextField
-              label="Toss Winner"
-              name="winner"
-              value={tossData.winner}
-              onChange={handleChange}
-              required
-              fullWidth
-            />
-            <TextField
-              label="Decision"
-              name="decision"
-              select
-              value={tossData.decision}
-              onChange={handleChange}
-              required
-              fullWidth
-            >
-              <MenuItem value="Bat">Bat</MenuItem>
-              <MenuItem value="Bowl">Bowl</MenuItem>
-            </TextField>
-            <Button type="submit" variant="contained" color="primary" sx={{ mt: 2 }}>
-              Record Toss
-            </Button>
-          </form>
+          <Typography variant="body1" color="textSecondary" align="center" sx={{ mb: 2 }}>
+            Toss not yet recorded.
+          </Typography>
         )}
+        <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+          <TextField
+            label="Toss Winner"
+            name="winner"
+            select
+            value={tossData.winner}
+            onChange={handleChange}
+            required
+            fullWidth
+          >
+            <MenuItem value="Team A">Team A</MenuItem>
+            <MenuItem value="Team B">Team B</MenuItem>
+          </TextField>
+          <TextField
+            label="Decision"
+            name="decision"
+            select
+            value={tossData.decision}
+            onChange={handleChange}
+            required
+            fullWidth
+          >
+            <MenuItem value="Bat">Bat</MenuItem>
+            <MenuItem value="Bowl">Bowl</MenuItem>
+          </TextField>
+          <Button type="submit" variant="contained" color="primary" sx={{ mt: 2 }}>
+            Record Toss
+          </Button>
+        </form>
       </CardContent>
     </Card>
   );

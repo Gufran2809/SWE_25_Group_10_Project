@@ -1,26 +1,25 @@
 import React, { useState, useEffect } from 'react';
 import { Card, CardContent, Typography, List, ListItem, ListItemText } from '@mui/material';
+import { db } from '../firebase';
+import { collection, query, where, onSnapshot } from 'firebase/firestore';
 
 const PerBallCommentary = ({ matchId }) => {
   const [commentary, setCommentary] = useState([]);
 
   useEffect(() => {
-    const fetchCommentary = async () => {
-      try {
-        const response = await fetch(`http://localhost:5001/api/matches/${matchId}/per-ball`);
-        const mockData = [
-          { ball: '15.1', runs: 4, event: 'Boundary', description: 'Smashed through cover!' },
-          { ball: '15.2', runs: 0, event: 'Dot', description: 'Good length, defended.' },
-          { ball: '15.3', runs: 6, event: 'Six', description: 'Lofted over mid-wicket!' },
-        ];
-        setCommentary(mockData);
-      } catch (error) {
-        console.error('Error fetching commentary:', error);
-      }
-    };
-    fetchCommentary();
-    const interval = setInterval(fetchCommentary, 30000); // Update every 30 seconds
-    return () => clearInterval(interval);
+    const q = query(collection(db, 'perBall'), where('matchId', '==', matchId));
+    const unsubscribe = onSnapshot(q, (snapshot) => {
+      const commentaryData = snapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() }));
+      setCommentary(commentaryData);
+    }, (error) => {
+      console.error('Error fetching commentary:', error);
+      setCommentary([
+        { id: '1', ball: '15.1', runs: 4, event: 'Boundary', description: 'Smashed through cover!' },
+        { id: '2', ball: '15.2', runs: 0, event: 'Dot', description: 'Good length, defended.' },
+        { id: '3', ball: '15.3', runs: 6, event: 'Six', description: 'Lofted over mid-wicket!' },
+      ]);
+    });
+    return () => unsubscribe();
   }, [matchId]);
 
   return (
@@ -31,8 +30,8 @@ const PerBallCommentary = ({ matchId }) => {
         </Typography>
         {commentary.length > 0 ? (
           <List>
-            {commentary.map((ball, index) => (
-              <ListItem key={index} sx={{ borderBottom: '1px solid #e0e0e0' }}>
+            {commentary.map((ball) => (
+              <ListItem key={ball.id} sx={{ borderBottom: '1px solid #e0e0e0' }}>
                 <ListItemText
                   primary={
                     <Typography variant="body1">

@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useContext } from 'react';
 import {
   Card,
   CardContent,
@@ -10,8 +10,18 @@ import {
   IconButton,
 } from '@mui/material';
 import DeleteIcon from '@mui/icons-material/Delete';
+import { AuthContext } from '../context/AuthContext';
+import { db } from '../firebase';
+import {
+  collection,
+  getDocs,
+  addDoc,
+  deleteDoc,
+  doc,
+} from 'firebase/firestore';
 
 const LeagueManagement = () => {
+  const { user } = useContext(AuthContext);
   const [leagues, setLeagues] = useState([]);
   const [formData, setFormData] = useState({
     name: '',
@@ -23,12 +33,10 @@ const LeagueManagement = () => {
   useEffect(() => {
     const fetchLeagues = async () => {
       try {
-        const response = await fetch('http://localhost:5001/api/leagues');
-        const mockData = [
-          { id: 1, name: 'University T20 League', startDate: '2025-05-01', endDate: '2025-05-30', description: 'Annual T20 tournament' },
-          { id: 2, name: 'ODI Championship', startDate: '2025-06-01', endDate: '2025-06-15', description: 'ODI series' },
-        ];
-        setLeagues(mockData);
+        const leaguesCollection = collection(db, 'leagues');
+        const snapshot = await getDocs(leaguesCollection);
+        const leaguesData = snapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() }));
+        setLeagues(leaguesData);
       } catch (error) {
         console.error('Error fetching leagues:', error);
       }
@@ -43,16 +51,19 @@ const LeagueManagement = () => {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
+    if (!user) {
+      alert('Please log in to create leagues.');
+      return;
+    }
     try {
-        const response = await fetch('http://localhost:5001/api/leagues', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify(formData)
-        });
-      console.log('League created:', formData);
-      setLeagues([...leagues, { id: leagues.length + 1, ...formData }]);
+      const leaguesCollection = collection(db, 'leagues');
+      await addDoc(leaguesCollection, formData);
+      await addDoc(collection(db, 'notifications'), {
+        message: `New league created: ${formData.name}`,
+        severity: 'success',
+        timestamp: new Date().toISOString(),
+      });
+      setLeagues([...leagues, { id: Date.now().toString(), ...formData }]);
       setFormData({ name: '', startDate: '', endDate: '', description: '' });
       alert('League created successfully!');
     } catch (error) {
@@ -62,9 +73,18 @@ const LeagueManagement = () => {
   };
 
   const handleDelete = async (leagueId) => {
+    if (!user) {
+      alert('Please log in to delete leagues.');
+      return;
+    }
     if (window.confirm('Are you sure you want to delete this league?')) {
       try {
-const response = await fetch(`http://localhost:5001/api/leagues/${leagueId}`, { method: 'DELETE' });
+        await deleteDoc(doc(db, 'leagues', leagueId));
+        await addDoc(collection(db, 'notifications'), {
+          message: `League deleted`,
+          severity: 'warning',
+          timestamp: new Date().toISOString(),
+        });
         setLeagues(leagues.filter((league) => league.id !== leagueId));
         alert('League deleted successfully!');
       } catch (error) {
@@ -147,9 +167,11 @@ const response = await fetch(`http://localhost:5001/api/leagues/${leagueId}`, { 
                     <Typography>End: {league.endDate}</Typography>
                     <Typography>{league.description}</Typography>
                   </CardContent>
-                  <IconButton color="error" onClick={() => handleDelete(league.id)}>
-                    <DeleteIcon />
-                  </IconButton>
+                  {user && (
+                    <IconButton color="error" onClick={() => handleDelete(league.id)}>
+                      <DeleteIcon />
+                    </IconButton>
+                  )}
                 </Card>
               </Grid>
             ))}

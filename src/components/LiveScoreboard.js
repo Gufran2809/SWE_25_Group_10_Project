@@ -1,5 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Card, CardContent, Typography, Grid, Box } from '@mui/material';
+import { db } from '../firebase';
+import { doc, onSnapshot } from 'firebase/firestore';
 
 const LiveScoreboard = ({ matchId }) => {
   const [scoreData, setScoreData] = useState({
@@ -10,24 +12,22 @@ const LiveScoreboard = ({ matchId }) => {
   });
 
   useEffect(() => {
-    const fetchScore = async () => {
-      try {
-        // Replace with actual API call
-        const mockData = {
+    const scoreRef = doc(db, 'scores', matchId);
+    const unsubscribe = onSnapshot(scoreRef, (doc) => {
+      if (doc.exists()) {
+        setScoreData(doc.data());
+      } else {
+        setScoreData({
           team1: { name: 'Team A', score: 120, wickets: 3, overs: 15.2 },
           team2: { name: 'Team B', score: 80, wickets: 2, overs: 10.0 },
           currentBall: { ballNumber: 1, runs: 4, event: 'Boundary' },
           status: 'Live',
-        };
-        setScoreData(mockData);
-      } catch (error) {
-        console.error('Error fetching score:', error);
+        });
       }
-    };
-
-    fetchScore();
-    const interval = setInterval(fetchScore, 30000);
-    return () => clearInterval(interval);
+    }, (error) => {
+      console.error('Error fetching score:', error);
+    });
+    return () => unsubscribe();
   }, [matchId]);
 
   return (

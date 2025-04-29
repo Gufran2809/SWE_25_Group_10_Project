@@ -1,5 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Card, CardContent, Typography, Table, TableBody, TableCell, TableHead, TableRow } from '@mui/material';
+import { db } from '../firebase';
+import { doc, onSnapshot } from 'firebase/firestore';
 
 const TournamentStats = () => {
   const [stats, setStats] = useState({
@@ -8,10 +10,12 @@ const TournamentStats = () => {
   });
 
   useEffect(() => {
-    const fetchStats = async () => {
-      try {
-        const response = await fetch('http://localhost:5001/api/tournament/stats');
-        const mockData = {
+    const statsRef = doc(db, 'tournamentStats', 'global');
+    const unsubscribe = onSnapshot(statsRef, (doc) => {
+      if (doc.exists()) {
+        setStats(doc.data());
+      } else {
+        setStats({
           topRunScorers: [
             { name: 'John Doe', team: 'Team A', runs: 450, matches: 10 },
             { name: 'Mike Brown', team: 'Team A', runs: 300, matches: 9 },
@@ -20,13 +24,12 @@ const TournamentStats = () => {
             { name: 'Jane Smith', team: 'Team B', wickets: 15, matches: 8 },
             { name: 'Mike Brown', team: 'Team A', wickets: 10, matches: 9 },
           ],
-        };
-        setStats(mockData);
-      } catch (error) {
-        console.error('Error fetching stats:', error);
+        });
       }
-    };
-    fetchStats();
+    }, (error) => {
+      console.error('Error fetching stats:', error);
+    });
+    return () => unsubscribe();
   }, []);
 
   return (
@@ -35,7 +38,6 @@ const TournamentStats = () => {
         <Typography variant="h2" color="primary" align="center" gutterBottom>
           Tournament Statistics
         </Typography>
-        {/* Top Run Scorers */}
         <Typography variant="h3" color="primary" gutterBottom>
           Top Run Scorers
         </Typography>
@@ -63,7 +65,6 @@ const TournamentStats = () => {
         ) : (
           <Typography color="textSecondary">No run scorers data available.</Typography>
         )}
-        {/* Top Wicket Takers */}
         <Typography variant="h3" color="primary" sx={{ mt: 3 }} gutterBottom>
           Top Wicket Takers
         </Typography>

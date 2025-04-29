@@ -9,7 +9,7 @@ const PlayerStats = () => {
         Player Stats
       </Typography>
       <Typography variant="body1" color="textSecondary" sx={{ mb: 3 }}>
-        View player profiles and performance statistics.
+        View detailed statistics for all players.
       </Typography>
       <PlayerProfiles />
     </Container>

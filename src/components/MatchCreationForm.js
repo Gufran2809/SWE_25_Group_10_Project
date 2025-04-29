@@ -1,7 +1,11 @@
-import React, { useState } from 'react';
-import { Card, CardContent, Typography, TextField, Button, MenuItem } from '@mui/material';
+import React, { useState, useContext } from 'react';
+import { Card, CardContent, TextField, Button, MenuItem, Typography } from '@mui/material';
+import { AuthContext } from '../context/AuthContext';
+import { db } from '../firebase';
+import { addDoc, collection } from 'firebase/firestore';
 
 const MatchCreationForm = () => {
+  const { user } = useContext(AuthContext);
   const [formData, setFormData] = useState({
     team1: '',
     team2: '',
@@ -19,26 +23,28 @@ const MatchCreationForm = () => {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
+    if (!user) {
+      alert('Please log in to create matches.');
+      return;
+    }
     try {
-      const response = await fetch('http://localhost:5001/api/matches', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(formData),
+      const matchesCollection = collection(db, 'matches');
+      const docRef = await addDoc(matchesCollection, formData);
+      await addDoc(collection(db, 'notifications'), {
+        message: `New match created: ${formData.team1} vs ${formData.team2}`,
+        severity: 'success',
+        timestamp: new Date().toISOString(),
       });
-      if (response.ok) {
-        alert('Match created successfully!');
-        setFormData({
-          team1: '',
-          team2: '',
-          matchDate: '',
-          matchTime: '',
-          venue: '',
-          matchType: 'T20',
-          leagueId: '',
-        });
-      } else {
-        throw new Error('Failed to create match');
-      }
+      alert('Match created successfully!');
+      setFormData({
+        team1: '',
+        team2: '',
+        matchDate: '',
+        matchTime: '',
+        venue: '',
+        matchType: 'T20',
+        leagueId: '',
+      });
     } catch (error) {
       console.error('Error creating match:', error);
       alert('Failed to create match.');
@@ -46,7 +52,7 @@ const MatchCreationForm = () => {
   };
 
   return (
-    <Card sx={{ maxWidth: 500, mx: 'auto', p: 2, mt: 3 }}>
+    <Card sx={{ maxWidth: 500, mx: 'auto', p: 2 }}>
       <CardContent>
         <Typography variant="h2" color="primary" align="center" gutterBottom>
           Create New Match

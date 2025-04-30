@@ -2,21 +2,14 @@ import React, { useContext } from 'react';
 import { Navigate } from 'react-router-dom';
 import { AuthContext } from '../context/AuthContext';
 
-const ProtectedRoute = ({ children }) => {
-  const { user, loading } = useContext(AuthContext);
-
-  console.log('ProtectedRoute: user=', user, 'loading=', loading);
-
-  if (loading) {
-    return <div>Loading...</div>;
-  }
-
+const ProtectedRoute = ({ children, role }) => {
+  const { user } = useContext(AuthContext);
   if (!user) {
-    console.log('No user, redirecting to /login');
-    return <Navigate to="/login" replace />;
+    return <Navigate to="/login" />;
   }
-
-  console.log('User authenticated, rendering children');
+  if (role && user.role !== role) {
+    return <Navigate to="/" />;
+  }
   return children;
 };
 

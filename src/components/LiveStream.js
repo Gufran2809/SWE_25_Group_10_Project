@@ -1,17 +1,18 @@
 import React from 'react';
-import { Container, Typography } from '@mui/material';
-import LiveStreaming from './LiveStreaming';
+import { Container, Typography, Box } from '@mui/material';
 
 const LiveStream = () => {
   return (
-    <Container sx={{ py: 4, textAlign: 'center' }}>
-      <Typography variant="h1" color="primary" gutterBottom>
+    <Container sx={{ py: 4 }}>
+      <Typography variant="h2" color="primary" gutterBottom>
         Live Stream
       </Typography>
-      <Typography variant="body1" color="textSecondary" sx={{ mb: 3 }}>
-        Watch live matches with real-time commentary.
+      <Box sx={{ bgcolor: '#000', height: 400, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+        <Typography color="white">Placeholder for live stream player</Typography>
+      </Box>
+      <Typography color="textSecondary" sx={{ mt: 2 }}>
+        Placeholder for viewer statistics and commentary.
       </Typography>
-      <LiveStreaming matchId="1" />
     </Container>
   );
 };

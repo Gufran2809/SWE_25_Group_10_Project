@@ -1,41 +1,64 @@
 import React, { useState, useEffect } from 'react';
 import { Snackbar, Alert } from '@mui/material';
 import { db } from '../firebase';
-import { collection, query, orderBy, onSnapshot, limit } from 'firebase/firestore';
+import { collection, query, orderBy, onSnapshot } from 'firebase/firestore';
 
 const Notifications = () => {
-  const [notification, setNotification] = useState({ open: false, message: '', severity: 'info' });
+  const [notifications, setNotifications] = useState([]);
+  const [currentNotification, setCurrentNotification] = useState(null);
 
   useEffect(() => {
-    const q = query(collection(db, 'notifications'), orderBy('timestamp', 'desc'), limit(1));
-    const unsubscribe = onSnapshot(q, (snapshot) => {
-      snapshot.docChanges().forEach((change) => {
-        if (change.type === 'added') {
-          const data = change.doc.data();
-          setNotification({ open: true, message: data.message, severity: data.severity });
+    // Subscribe to Firestore notifications
+    const notificationsQuery = query(collection(db, 'notifications'), orderBy('createdAt', 'desc'));
+    const unsubscribe = onSnapshot(
+      notificationsQuery,
+      (snapshot) => {
+        const newNotifications = snapshot.docs.map((doc) => ({
+          id: doc.id,
+          ...doc.data(),
+        }));
+        setNotifications(newNotifications);
+        // Show the latest notification
+        if (newNotifications.length > 0 && !currentNotification) {
+          setCurrentNotification(newNotifications[0]);
         }
-      });
-    }, (error) => {
-      console.error('Error fetching notifications:', error);
-    });
+      },
+      (error) => {
+        console.error('Error fetching notifications:', error);
+      }
+    );
     return () => unsubscribe();
-  }, []);
+  }, [currentNotification]);
 
-  const handleClose = () => {
-    setNotification({ ...notification, open: false });
+  const handleClose = (id) => {
+    setCurrentNotification(null);
+    // Move to next notification if available
+    const remaining = notifications.filter((n) => n.id !== id);
+    setNotifications(remaining);
+    if (remaining.length > 0) {
+      setCurrentNotification(remaining[0]);
+    }
   };
 
   return (
-    <Snackbar
-      open={notification.open}
-      autoHideDuration={6000}
-      onClose={handleClose}
-      anchorOrigin={{ vertical: 'top', horizontal: 'right' }}
-    >
-      <Alert onClose={handleClose} severity={notification.severity} sx={{ width: '100%' }}>
-        {notification.message}
-      </Alert>
-    </Snackbar>
+    <>
+      {currentNotification && (
+        <Snackbar
+          open={!!currentNotification}
+          autoHideDuration={6000}
+          onClose={() => handleClose(currentNotification.id)}
+          anchorOrigin={{ vertical: 'top', horizontal: 'right' }}
+        >
+          <Alert
+            onClose={() => handleClose(currentNotification.id)}
+            severity="info"
+            sx={{ bgcolor: '#1b5e20', color: '#ffffff', '& .MuiAlert-icon': { color: '#ffffff' } }}
+          >
+            {currentNotification.message || 'Sample notification'}
+          </Alert>
+        </Snackbar>
+      )}
+    </>
   );
 };
 

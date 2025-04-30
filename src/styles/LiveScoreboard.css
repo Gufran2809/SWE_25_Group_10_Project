@@ -1,0 +1,50 @@
+.scoreboard {
+    background-color: white;
+    border-radius: 8px;
+    padding: 1.5rem;
+    margin: 1rem auto;
+    max-width: 600px;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+    text-align: center;
+  }
+  
+  .scoreboard h2 {
+    color: #1a3c34;
+    margin-bottom: 1rem;
+  }
+  
+  .match-status {
+    font-weight: bold;
+    color: #e63946;
+    margin-bottom: 1rem;
+  }
+  
+  .teams {
+    display: flex;
+    justify-content: space-between;
+    gap: 1rem;
+  }
+  
+  .team {
+    flex: 1;
+    padding: 1rem;
+    background-color: #f4f4f4;
+    border-radius: 4px;
+  }
+  
+  .team h3 {
+    margin: 0;
+    color: #1a3c34;
+  }
+  
+  .ball-update {
+    margin-top: 1rem;
+    padding: 1rem;
+    background-color: #e9ecef;
+    border-radius: 4px;
+  }
+  
+  .ball-update h4 {
+    margin: 0;
+    color: #1a3c34;
+  }

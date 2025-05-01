@@ -51,7 +51,8 @@ import {
   MdNotifications as NotificationIcon,
   MdLogout as LogoutIcon,
   MdUpload as UploadIcon,
-  MdMenu as MenuIcon
+  MdMenu as MenuIcon,
+  MdDelete as DeleteIcon,
 } from 'react-icons/md';
 import jsPDF from 'jspdf';
 import { styled } from '@mui/material/styles';
@@ -70,7 +71,13 @@ import {
   onSnapshot,
   updateDoc,
   arrayUnion,
+  arrayRemove,
   Timestamp,
+  query,
+  where,
+  getDocs,
+  getDoc,
+  increment,
 } from 'firebase/firestore';
 import { getStorage, ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { Link } from 'react-router-dom';
@@ -189,7 +196,11 @@ const EnhancedLeagueManagement = () => {
   const [newTeam, setNewTeam] = useState({ name: '', logo: null, captainId: '', wicketKeeperId: '' });
   const [selectedTeams, setSelectedTeams] = useState([]);
   const [selectedTeamId, setSelectedTeamId] = useState('');
-  const [playerFormData, setPlayerFormData] = useState({ name: '', role: '', isCaptain: false, isWicketKeeper: false });
+  const [playerFormData, setPlayerFormData] = useState({
+    playerId: '',
+    isCaptain: false,
+    isWicketKeeper: false,
+  });
   const [matchFormData, setMatchFormData] = useState({
     team1Id: '',
     team2Id: '',
@@ -210,6 +221,7 @@ const EnhancedLeagueManagement = () => {
     batsmanId: '',
     bowlerId: '',
     wicketType: '',
+    nonStrikerId: '',
   });
   const [bracketData, setBracketData] = useState([]);
   const [poolData, setPoolData] = useState([]);
@@ -226,6 +238,8 @@ const EnhancedLeagueManagement = () => {
   const [user, setUser] = useState(null);
   const [sortConfig, setSortConfig] = useState({ key: 'points', direction: 'desc' });
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [availablePlayers, setAvailablePlayers] = useState([]);
+  const [battingTeam, setBattingTeam] = useState(null);
 
   // Monitor authentication state
   useEffect(() => {
@@ -463,14 +477,55 @@ const EnhancedLeagueManagement = () => {
     }
   };
 
-  const handlePlayerDialogOpen = () => {
-    setOpenPlayerDialog(true);
+  const handlePlayerDialogOpen = async (teamId) => {
+    try {
+      setSelectedTeamId(teamId);
+
+      // Fetch all players from Firestore
+      const playersRef = collection(db, 'players');
+      const snapshot = await getDocs(playersRef);
+      const allPlayers = snapshot.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data()
+      }));
+
+      // Filter available players (either unassigned or belonging to selected team)
+      const availablePlayers = allPlayers.filter(player =>
+        !player.teamId || player.teamId === teamId
+      );
+
+      setAvailablePlayers(availablePlayers);
+      setOpenPlayerDialog(true);
+    } catch (error) {
+      console.error('Error fetching players:', error);
+      setSnackbar({
+        open: true,
+        message: 'Error loading players'
+      });
+    }
+  };
+
+  const fetchTeamPlayers = async (teamId) => {
+    try {
+      const q = query(
+        collection(db, 'players'),
+        where('teamId', '==', teamId)
+      );
+      const snapshot = await getDocs(q);
+      return snapshot.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data()
+      }));
+    } catch (error) {
+      console.error('Error fetching team players:', error);
+      return [];
+    }
   };
 
   const handlePlayerDialogClose = () => {
     setOpenPlayerDialog(false);
     setSelectedTeamId('');
-    setPlayerFormData({ name: '', role: '', isCaptain: false, isWicketKeeper: false });
+    setPlayerFormData({ playerId: '', isCaptain: false, isWicketKeeper: false });
   };
 
   const handlePlayerFormChange = (e) => {
@@ -478,39 +533,65 @@ const EnhancedLeagueManagement = () => {
     setPlayerFormData({ ...playerFormData, [name]: type === 'checkbox' ? checked : value });
   };
 
-  const handleCreatePlayer = async () => {
+  const handleAddPlayerToTeam = async () => {
     try {
       if (!user) throw new Error('You must be signed in');
       setLoading(true);
-      const teamPlayers = players.filter((p) => p.teamId === selectedTeamId);
-      if (teamPlayers.length >= 11) {
-        setSnackbar({ open: true, message: 'Team already has 11 players!' });
-        return;
-      }
-      const playerId = `player-${Date.now()}`;
-      const newPlayer = {
-        id: playerId,
-        name: playerFormData.name,
-        role: playerFormData.role,
+
+      const selectedPlayer = players.find((p) => p.id === playerFormData.playerId);
+      if (!selectedPlayer) throw new Error('Player not found');
+
+      await updateDoc(doc(db, 'players', selectedPlayer.id), {
         teamId: selectedTeamId,
         isCaptain: playerFormData.isCaptain,
         isWicketKeeper: playerFormData.isWicketKeeper,
-        stats: { matches: 0, runs: 0, wickets: 0, strikeRate: 0, catches: 0 },
-      };
-      await setDoc(doc(db, 'players', playerId), newPlayer);
-      await updateDoc(doc(db, 'teams', selectedTeamId), {
-        playerIds: arrayUnion(playerId),
-        captainId: playerFormData.isCaptain ? playerId : doc(db, 'teams', selectedTeamId).captainId,
-        wicketKeeperId: playerFormData.isWicketKeeper ? playerId : doc(db, 'teams', selectedTeamId).wicketKeeperId,
       });
-      setPlayerFormData({ name: '', role: '', isCaptain: false, isWicketKeeper: false });
-      setSnackbar({ open: true, message: 'Player added successfully!' });
-      if (teamPlayers.length + 1 === 11) {
-        setOpenPlayerDialog(false);
-        setSelectedTeamId('');
-      }
+
+      await updateDoc(doc(db, 'teams', selectedTeamId), {
+        playerIds: arrayUnion(selectedPlayer.id),
+        captainId: playerFormData.isCaptain ? selectedPlayer.id : null,
+        wicketKeeperId: playerFormData.isWicketKeeper ? selectedPlayer.id : null,
+      });
+
+      setSnackbar({ open: true, message: 'Player added to team successfully!' });
+      handlePlayerDialogClose();
     } catch (error) {
-      handleError(error, 'Failed to add player');
+      console.error('Error adding player to team:', error);
+      setSnackbar({ open: true, message: 'Failed to add player to team' });
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleRemovePlayer = async (playerId) => {
+    try {
+      setLoading(true);
+      
+      // Update player document
+      await updateDoc(doc(db, 'players', playerId), {
+        teamId: null,
+        isCaptain: false,
+        isWicketKeeper: false
+      });
+
+      // Update team document
+      await updateDoc(doc(db, 'teams', selectedTeamId), {
+        playerIds: arrayRemove(playerId)
+      });
+
+      setSnackbar({
+        open: true,
+        message: 'Player removed successfully'
+      });
+      
+      // Refresh available players
+      handlePlayerDialogOpen(selectedTeamId);
+    } catch (error) {
+      console.error('Error removing player:', error);
+      setSnackbar({
+        open: true,
+        message: 'Error removing player'
+      });
     } finally {
       setLoading(false);
     }
@@ -567,124 +648,260 @@ const EnhancedLeagueManagement = () => {
     }
   };
 
-  const handleScoringDialogOpen = (match) => {
-    setSelectedMatch(match);
-    setScoringData({
-      matchId: match.id,
-      over: match.currentOver,
-      ball: match.currentBall,
-      runs: 0,
-      extra: '',
-      wicket: false,
-      batsmanId: '',
-      bowlerId: '',
-      wicketType: '',
-    });
-    setOpenScoringDialog(true);
+  const handleToss = async (match) => {
+    try {
+      const winner = await new Promise((resolve) => {
+        // Show toss dialog
+        if (window.confirm(`Did ${teams.find(t => t.id === match.team1Id)?.name} win the toss?`)) {
+          resolve(match.team1Id);
+        } else {
+          resolve(match.team2Id);
+        }
+      });
+
+      const choice = await new Promise((resolve) => {
+        if (window.confirm('Did they choose to bat first?')) {
+          resolve('bat');
+        } else {
+          resolve('bowl');
+        }
+      });
+
+      const battingTeamId = choice === 'bat' ? winner : 
+        (winner === match.team1Id ? match.team2Id : match.team1Id);
+
+      await updateDoc(doc(db, 'matches', match.id), {
+        toss: { winner, choice },
+        battingTeam: battingTeamId,
+        status: 'Live'
+      });
+
+      setBattingTeam(battingTeamId);
+      return battingTeamId;
+    } catch (error) {
+      console.error('Error handling toss:', error);
+      throw error;
+    }
+  };
+
+  const handleScoringDialogOpen = async (match) => {
+    try {
+      setSelectedMatch(match);
+      let currentBattingTeam = match.battingTeam;
+      
+      if (!currentBattingTeam) {
+        currentBattingTeam = await handleToss(match);
+      }
+
+      setBattingTeam(currentBattingTeam);
+      setScoringData({
+        matchId: match.id,
+        over: match.currentOver || 0,
+        ball: match.currentBall || 1,
+        runs: 0,
+        extra: '',
+        wicket: false,
+        batsmanId: '',
+        nonStrikerId: '',
+        bowlerId: '',
+        wicketType: '',
+      });
+      setOpenScoringDialog(true);
+    } catch (error) {
+      console.error('Error opening scoring dialog:', error);
+      setSnackbar({
+        open: true,
+        message: 'Error starting scoring session'
+      });
+    }
   };
 
   const handleScoringDialogClose = () => {
     setOpenScoringDialog(false);
-    setScoringData({ matchId: '', over: 0, ball: 1, runs: 0, extra: '', wicket: false, batsmanId: '', bowlerId: '', wicketType: '' });
+    setScoringData({ matchId: '', over: 0, ball: 1, runs: 0, extra: '', wicket: false, batsmanId: '', bowlerId: '', wicketType: '', nonStrikerId: '' });
     setSelectedMatch(null);
   };
 
   const handleScoringChange = (e) => {
     const { name, value, type, checked } = e.target;
-    setScoringData({ ...scoringData, [name]: type === 'checkbox' ? checked : value });
+    setScoringData(prev => ({
+      ...prev,
+      [name]: type === 'checkbox' ? checked : value
+    }));
+  };
+
+  const rotateStrike = () => {
+    setScoringData(prev => ({
+      ...prev,
+      batsmanId: prev.nonStrikerId,
+      nonStrikerId: prev.batsmanId
+    }));
+  };
+
+  const updateBatsmanStats = async (batsmanId, runs, isOut = false) => {
+    try {
+      const batsmanRef = doc(db, 'players', batsmanId);
+      const batsmanDoc = await getDoc(batsmanRef);
+      const currentStats = batsmanDoc.data()?.stats || {};
+
+      // Only add actual runs, not calculated ones
+      const updatedStats = {
+        ...currentStats,
+        runs: (currentStats.runs || 0) + runs,
+        ballsFaced: (currentStats.ballsFaced || 0) + 1,
+        isOut: isOut
+      };
+
+      // Calculate strike rate
+      updatedStats.strikeRate = ((updatedStats.runs / updatedStats.ballsFaced) * 100).toFixed(2);
+
+      await updateDoc(batsmanRef, {
+        stats: updatedStats
+      });
+    } catch (error) {
+      console.error('Error updating batsman stats:', error);
+      throw error;
+    }
+  };
+
+  const updateLiveMatchState = async (matchId, scoringData, battingTeam) => {
+    try {
+      const matchRef = doc(db, 'matches', matchId);
+      const teamKey = battingTeam === selectedMatch.team1Id ? 'team1' : 'team2';
+      
+      // Get current match state
+      const matchDoc = await getDoc(matchRef);
+      const currentMatch = matchDoc.data();
+
+      // Calculate actual runs (including extras)
+      const actualRuns = scoringData.runs + (scoringData.extra === 'wide' || scoringData.extra === 'noBall' ? 1 : 0);
+      
+      // Update match state with correct runs
+      await updateDoc(matchRef, {
+        [`score.${teamKey}.runs`]: currentMatch.score[teamKey].runs + actualRuns,
+        [`score.${teamKey}.wickets`]: scoringData.wicket ? currentMatch.score[teamKey].wickets + 1 : currentMatch.score[teamKey].wickets,
+        [`score.${teamKey}.overs`]: `${scoringData.over}.${scoringData.ball}`,
+        currentBatsman: scoringData.batsmanId,
+        currentNonStriker: scoringData.nonStrikerId,
+        currentBowler: scoringData.bowlerId,
+        currentOver: scoringData.over,
+        currentBall: scoringData.ball
+      });
+
+    } catch (error) {
+      console.error('Error updating live match state:', error);
+      throw error;
+    }
   };
 
   const handleAddBall = async () => {
     try {
       if (!user) throw new Error('You must be signed in');
       setLoading(true);
-      const match = matches.find((m) => m.id === scoringData.matchId);
-      const isExtra = scoringData.extra === 'noBall' || scoringData.extra === 'wide';
-      const runs = parseInt(scoringData.runs);
+
+      // Only update batsman stats if it's not a wide or no ball
+      if (!['wide', 'noBall'].includes(scoringData.extra)) {
+        await updateBatsmanStats(scoringData.batsmanId, scoringData.runs, scoringData.wicket);
+      }
+
+      // Update match state
+      await updateLiveMatchState(selectedMatch.id, scoringData, battingTeam);
+
+      // Add commentary
       const commentaryId = `comment-${Date.now()}`;
-      const newCommentary = {
+      await addDoc(collection(db, 'commentary'), {
         id: commentaryId,
-        matchId: scoringData.matchId,
+        matchId: selectedMatch.id,
         over: scoringData.over,
         ball: scoringData.ball,
-        runs,
+        runs: scoringData.runs,
         extra: scoringData.extra,
         wicket: scoringData.wicket,
         wicketType: scoringData.wicketType,
         batsmanId: scoringData.batsmanId,
         bowlerId: scoringData.bowlerId,
-        commentary: generateCommentary(runs, scoringData.extra, scoringData.wicket, scoringData.wicketType, match),
-      };
-
-      const battingTeamKey = match.battingTeam === match.team1Id ? 'team1' : 'team2';
-      const newScore = { ...match.score };
-      newScore[battingTeamKey].runs += runs;
-      if (scoringData.wicket) newScore[battingTeamKey].wickets += 1;
-      if (scoringData.extra === 'wide' || scoringData.extra === 'bye' || scoringData.extra === 'legBye') {
-        newScore[battingTeamKey].runs += 1;
-      }
-      if (!isExtra) {
-        newScore[battingTeamKey].overs = scoringData.ball === 6 ? scoringData.over + 1 : scoringData.over + scoringData.ball / 10;
-      }
-
-      const updatedMatch = {
-        ...match,
-        score: newScore,
-        currentOver: scoringData.ball === 6 ? scoringData.over + 1 : scoringData.over,
-        currentBall: scoringData.ball === 6 ? 1 : scoringData.ball + 1,
-        status: 'Live',
-      };
-
-      const updatedPlayers = players.map((p) => {
-        if (p.id === scoringData.batsmanId) {
-          return {
-            ...p,
-            stats: {
-              ...p.stats,
-              runs: p.stats.runs + runs,
-              matches: p.stats.matches + (scoringData.ball === 1 && scoringData.over === 0 ? 1 : 0),
-              strikeRate: ((p.stats.runs + runs) / (p.stats.matches || 1)) * 100,
-            },
-          };
-        }
-        if (scoringData.wicket && p.id === scoringData.bowlerId) {
-          return {
-            ...p,
-            stats: { ...p.stats, wickets: p.stats.wickets + 1 },
-          };
-        }
-        return p;
+        commentary: generateCommentary(scoringData.runs, scoringData.extra, scoringData.wicket, scoringData.wicketType)
       });
 
-      await Promise.all([
-        setDoc(doc(db, 'matches', match.id), updatedMatch),
-        setDoc(doc(db, 'commentary', commentaryId), newCommentary),
-        setDoc(doc(db, 'notifications', `notification-${Date.now()}`), {
-          id: `notification-${Date.now()}`,
-          matchId: match.id,
-          message: `Over ${newCommentary.over}.${newCommentary.ball}: ${newCommentary.commentary}`,
-          timestamp: Date.now(),
-        }),
-        ...updatedPlayers.map((p) => setDoc(doc(db, 'players', p.id), p)),
-      ]);
+      // Rotate strike if needed
+      const shouldRotateStrike = 
+        (scoringData.runs % 2 === 1 && !scoringData.extra) || 
+        (!scoringData.extra && scoringData.ball === 6);
 
-      setScoringData({
-        ...scoringData,
-        ball: scoringData.ball === 6 ? 1 : scoringData.ball + 1,
-        over: scoringData.ball === 6 ? scoringData.over + 1 : scoringData.over,
+      if (shouldRotateStrike) {
+        rotateStrike();
+      }
+
+      // Reset ball data
+      setScoringData(prev => ({
+        ...prev,
         runs: 0,
         extra: '',
         wicket: false,
         wicketType: '',
-      });
-      setSnackbar({ open: true, message: 'Ball recorded!' });
-      checkMilestones(match, runs);
+        ball: prev.ball === 6 ? 1 : prev.ball + 1,
+        over: prev.ball === 6 ? prev.over + 1 : prev.over
+      }));
+
+      setSnackbar({ open: true, message: 'Ball recorded successfully!' });
     } catch (error) {
       handleError(error, 'Failed to record ball');
     } finally {
       setLoading(false);
     }
   };
+
+  useEffect(() => {
+    if (selectedMatch) {
+      const unsubscribe = onSnapshot(doc(db, 'matches', selectedMatch.id), (doc) => {
+        const matchData = doc.data();
+        if (matchData) {
+          setSelectedMatch({ id: doc.id, ...matchData });
+
+          // Update scoring data with current match state
+          setScoringData((prev) => ({
+            ...prev,
+            batsmanId: matchData.currentBatsman || '',
+            nonStrikerId: matchData.currentNonStriker || '',
+            bowlerId: matchData.currentBowler || '',
+            over: matchData.currentOver || 0,
+            ball: matchData.currentBall || 1,
+          }));
+        }
+      });
+
+      return () => unsubscribe();
+    }
+  }, [selectedMatch?.id]);
+
+  useEffect(() => {
+    if (selectedMatch && (scoringData.batsmanId || scoringData.nonStrikerId)) {
+      const unsubscribeBatsmen = onSnapshot(
+        query(
+          collection(db, 'players'),
+          where('id', 'in', [scoringData.batsmanId, scoringData.nonStrikerId].filter(Boolean))
+        ),
+        (snapshot) => {
+          const batsmenData = snapshot.docs.map(doc => ({
+            id: doc.id,
+            ...doc.data()
+          }));
+          setPlayers(prevPlayers => {
+            const updatedPlayers = [...prevPlayers];
+            batsmenData.forEach(batsman => {
+              const index = updatedPlayers.findIndex(p => p.id === batsman.id);
+              if (index !== -1) {
+                updatedPlayers[index] = batsman;
+              }
+            });
+            return updatedPlayers;
+          });
+        }
+      );
+
+      return () => unsubscribeBatsmen();
+    }
+  }, [selectedMatch?.id, scoringData.batsmanId, scoringData.nonStrikerId]);
 
   const handleUndoBall = async () => {
     try {
@@ -914,12 +1131,136 @@ const EnhancedLeagueManagement = () => {
     setStreamConfig({ ...streamConfig, [e.target.name]: e.target.value });
   };
 
+  const fetchPointsTableData = async (leagueId) => {
+    try {
+      setLoading(true);
+
+      // Get all matches for this league
+      const matchesQuery = query(
+        collection(db, 'matches'),
+        where('leagueId', '==', leagueId),
+        where('status', '==', 'Completed')
+      );
+
+      const matchesSnapshot = await getDocs(matchesQuery);
+      const matchesData = matchesSnapshot.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data()
+      }));
+
+      // Calculate points table
+      const pointsTable = teams
+        .filter(team => team.leagueId === leagueId)
+        .map(team => {
+          const teamMatches = matchesData.filter(m =>
+            m.team1Id === team.id || m.team2Id === team.id
+          );
+
+          const stats = teamMatches.reduce((acc, match) => {
+            const isTeam1 = match.team1Id === team.id;
+            const teamScore = isTeam1 ? match.score.team1 : match.score.team2;
+            const opponentScore = isTeam1 ? match.score.team2 : match.score.team1;
+
+            if (teamScore.runs > opponentScore.runs) {
+              acc.points += 2;
+              acc.wins += 1;
+            } else {
+              acc.losses += 1;
+            }
+
+            acc.runsScored += teamScore.runs;
+            acc.runsConceded += opponentScore.runs;
+            acc.oversPlayed += parseFloat(teamScore.overs);
+            acc.oversBowled += parseFloat(opponentScore.overs);
+
+            return acc;
+          }, {
+            points: 0,
+            wins: 0,
+            losses: 0,
+            runsScored: 0,
+            runsConceded: 0,
+            oversPlayed: 0,
+            oversBowled: 0
+          });
+
+          const nrr = (
+            (stats.runsScored / stats.oversPlayed) -
+            (stats.runsConceded / stats.oversBowled)
+          ).toFixed(2);
+
+          return {
+            teamId: team.id,
+            teamName: team.name,
+            matchesPlayed: teamMatches.length,
+            wins: stats.wins,
+            losses: stats.losses,
+            points: stats.points,
+            nrr: nrr
+          };
+        });
+
+      return pointsTable.sort((a, b) => {
+        if (b.points !== a.points) return b.points - a.points;
+        return parseFloat(b.nrr) - parseFloat(a.nrr);
+      });
+
+    } catch (error) {
+      console.error('Error fetching points table:', error);
+      return [];
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const fetchLiveStreamData = async (matchId) => {
+    try {
+      const streamRef = doc(db, 'streams', matchId);
+      const streamDoc = await getDoc(streamRef);
+
+      if (streamDoc.exists()) {
+        return {
+          isActive: true,
+          ...streamDoc.data()
+        };
+      }
+
+      return {
+        isActive: false,
+        protocol: 'RTMP',
+        resolution: '720p',
+        bitrate: 2500
+      };
+    } catch (error) {
+      console.error('Error fetching stream data:', error);
+      return null;
+    }
+  };
+
   const handleStartStream = async () => {
     try {
       if (!user) throw new Error('You must be signed in');
+      if (!selectedMatch) throw new Error('No match selected');
       setLoading(true);
-      // Placeholder for actual stream start logic
-      setSnackbar({ open: true, message: 'Stream started successfully!' });
+
+      const streamData = {
+        matchId: selectedMatch.id,
+        leagueId: selectedLeague.id,
+        protocol: streamConfig.protocol,
+        serverUrl: streamConfig.serverUrl,
+        streamKey: streamConfig.streamKey,
+        resolution: streamConfig.resolution,
+        bitrate: parseInt(streamConfig.bitrate),
+        startTime: new Date().toISOString(),
+        status: 'active'
+      };
+
+      await setDoc(doc(db, 'streams', selectedMatch.id), streamData);
+
+      setSnackbar({
+        open: true,
+        message: 'Stream started successfully!'
+      });
       setOpenStreamDialog(false);
     } catch (error) {
       handleError(error, 'Failed to start stream');
@@ -927,6 +1268,18 @@ const EnhancedLeagueManagement = () => {
       setLoading(false);
     }
   };
+
+  useEffect(() => {
+    if (selectedLeague && tabValue === 4) {
+      fetchPointsTableData(selectedLeague.id);
+    }
+  }, [selectedLeague, tabValue]);
+
+  useEffect(() => {
+    if (selectedMatch && tabValue === 6) {
+      fetchLiveStreamData(selectedMatch.id);
+    }
+  }, [selectedMatch, tabValue]);
 
   const getPointsTable = (leagueId) => {
     const leagueTeams = teams.filter((t) => t.leagueId === leagueId);
@@ -1240,48 +1593,60 @@ const EnhancedLeagueManagement = () => {
                   <TabPanel value={tabValue} index={2}>
                     <Grid container spacing={3}>
                       <Grid item xs={12}>
-                        <ActionButton startIcon={<AddIcon />} onClick={handlePlayerDialogOpen} sx={{ mb: 3 }}>
-                          Add Player
-                        </ActionButton>
-                        <Grid container spacing={2}>
-                          {loading
-                            ? [...Array(6)].map((_, index) => (
-                                <Grid item xs={12} sm={6} md={4} key={index}>
-                                  <Skeleton variant="rectangular" height={200} sx={{ borderRadius: '12px' }} />
-                                </Grid>
-                              ))
-                            : teams
-                                .filter((t) => t.leagueId === selectedLeague.id)
-                                .map((team) => (
-                                  <Grid item xs={12} sm={6} md={4} key={team.id}>
-                                    <StyledCard>
-                                      <CardContent>
-                                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, mb: 2 }}>
-                                          {team.logo && <Avatar src={team.logo} sx={{ border: '2px solid #1b5e20' }} />}
-                                          <Typography variant="h6" sx={{ color: '#1b5e20' }}>{team.name}</Typography>
-                                        </Box>
-                                        <Typography sx={{ color: '#424242' }}>Players: {(team.playerIds || []).length}</Typography>
-                                        <Typography sx={{ color: '#424242' }}>
-                                          Captain: {players.find((p) => p.id === team.captainId)?.name || 'Not assigned'}
+                        {loading ? (
+                          <CircularProgress />
+                        ) : (
+                          <Grid container spacing={2}>
+                            {teams
+                              .filter(t => t.leagueId === selectedLeague.id)
+                              .map((team) => (
+                                <Grid item xs={12} sm={6} md={4} key={team.id}>
+                                  <StyledCard>
+                                    <CardContent>
+                                      <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, mb: 2 }}>
+                                        {team.logo && (
+                                          <Avatar 
+                                            src={team.logo} 
+                                            sx={{ border: '2px solid #1b5e20' }} 
+                                          />
+                                        )}
+                                        <Typography variant="h6" sx={{ color: '#1b5e20' }}>
+                                          {team.name}
                                         </Typography>
-                                        <Typography sx={{ color: '#424242' }}>
-                                          Wicket Keeper: {players.find((p) => p.id === team.wicketKeeperId)?.name || 'Not assigned'}
-                                        </Typography>
+                                      </Box>
+                                      
+                                      {/* Team Players List */}
+                                      <List sx={{ maxHeight: 200, overflow: 'auto' }}>
+                                        {players
+                                          .filter(p => p.teamId === team.id)
+                                          .map(player => (
+                                            <ListItem key={player.id}>
+                                              <ListItemText
+                                                primary={player.name}
+                                                secondary={`${player.role}${player.isCaptain ? ' (Captain)' : ''}${player.isWicketKeeper ? ' (WK)' : ''}`}
+                                              />
+                                            </ListItem>
+                                          ))}
+                                      </List>
+
+                                      <Box sx={{ mt: 2, display: 'flex', gap: 1 }}>
                                         <Button
-                                          variant="outlined"
-                                          onClick={() => {
-                                            setSelectedTeamId(team.id);
-                                            setOpenPlayerDialog(true);
+                                          variant="contained"
+                                          onClick={() => handlePlayerDialogOpen(team.id)}
+                                          sx={{
+                                            bgcolor: '#1b5e20',
+                                            '&:hover': { bgcolor: '#2e7d32' }
                                           }}
-                                          sx={{ mt: 2, color: '#1b5e20', borderColor: '#1b5e20' }}
                                         >
-                                          Edit Team
+                                          Manage Players
                                         </Button>
-                                      </CardContent>
-                                    </StyledCard>
-                                  </Grid>
-                                ))}
-                        </Grid>
+                                      </Box>
+                                    </CardContent>
+                                  </StyledCard>
+                                </Grid>
+                              ))}
+                          </Grid>
+                        )}
                       </Grid>
                     </Grid>
                   </TabPanel>
@@ -1528,7 +1893,7 @@ const EnhancedLeagueManagement = () => {
                                 </Typography>
                                 <Typography variant="h6" sx={{ mt: 2, color: '#1b5e20' }}>Current Bowler</Typography>
                                 <Typography sx={{ color: '#424242' }}>
-                                  {players.find((p) => p.id === scoringData.bowlerId)?.name || 'Select Bowler'}
+                                  {scoringData.bowlerId ? players.find(p => p.id === scoringData.bowlerId)?.name : 'Select Bowler'}
                                 </Typography>
                                 <Divider sx={{ my: 2, bgcolor: '#1b5e20' }} />
                                 <Typography variant="h6" sx={{ color: '#1b5e20' }}>Match Highlights</Typography>
@@ -1865,93 +2230,104 @@ const EnhancedLeagueManagement = () => {
             </Dialog>
   
             {/* Player Management Dialog */}
-            <Dialog open={openPlayerDialog} onClose={handlePlayerDialogClose} maxWidth="sm" fullWidth>
+            <Dialog 
+              open={openPlayerDialog} 
+              onClose={handlePlayerDialogClose} 
+              maxWidth="sm" 
+              fullWidth
+            >
               <DialogTitle sx={{ bgcolor: '#1b5e20', color: '#ffffff' }}>
-                Add Player to Team
+                Manage Team Players
               </DialogTitle>
-              <DialogContent sx={{ bgcolor: '#f5f5f5' }}>
-                <FormControl fullWidth margin="normal">
-                  <InputLabel sx={{ color: '#1b5e20' }}>Select Team</InputLabel>
-                  <Select
-                    value={selectedTeamId}
-                    onChange={(e) => setSelectedTeamId(e.target.value)}
-                    label="Select Team"
-                    sx={{ bgcolor: '#ffffff', borderRadius: '8px' }}
-                  >
-                    {teams
-                      .filter((t) => t.leagueId === selectedLeague?.id)
-                      .map((team) => (
-                        <MenuItem key={team.id} value={team.id}>
-                          {team.name}
-                        </MenuItem>
-                      ))}
-                  </Select>
-                </FormControl>
-                <TextField
-                  label="Player Name"
-                  name="name"
-                  value={playerFormData.name}
-                  onChange={handlePlayerFormChange}
-                  fullWidth
-                  margin="normal"
-                  required
-                  sx={{ bgcolor: '#ffffff', borderRadius: '8px' }}
-                />
-                <FormControl fullWidth margin="normal">
-                  <InputLabel sx={{ color: '#1b5e20' }}>Role</InputLabel>
-                  <Select
-                    name="role"
-                    value={playerFormData.role}
-                    onChange={handlePlayerFormChange}
-                    label="Role"
-                    sx={{ bgcolor: '#ffffff', borderRadius: '8px' }}
-                  >
-                    <MenuItem value="Batsman">Batsman</MenuItem>
-                    <MenuItem value="Bowler">Bowler</MenuItem>
-                    <MenuItem value="All-Rounder">All-Rounder</MenuItem>
-                    <MenuItem value="Wicket-Keeper">Wicket-Keeper</MenuItem>
-                  </Select>
-                </FormControl>
-                <Box sx={{ display: 'flex', gap: 2, mt: 2 }}>
-                  <FormControlLabel
-                    control={
-                      <Checkbox
-                        name="isCaptain"
-                        checked={playerFormData.isCaptain}
+              <DialogContent sx={{ bgcolor: '#f5f5f5', mt: 2 }}>
+                {loading ? (
+                  <CircularProgress />
+                ) : (
+                  <>
+                    <Typography variant="subtitle1" gutterBottom>
+                      Current Team: {teams.find(t => t.id === selectedTeamId)?.name}
+                    </Typography>
+                    
+                    {/* Add New Player Section */}
+                    <FormControl fullWidth margin="normal">
+                      <InputLabel>Add Player</InputLabel>
+                      <Select
+                        value={playerFormData.playerId}
                         onChange={handlePlayerFormChange}
-                        sx={{ color: '#1b5e20', '&.Mui-checked': { color: '#1b5e20' } }}
+                        name="playerId"
+                      >
+                        {availablePlayers.map(player => (
+                          <MenuItem key={player.id} value={player.id}>
+                            {player.name} - {player.role}
+                          </MenuItem>
+                        ))}
+                      </Select>
+                    </FormControl>
+        
+                    <Box sx={{ mt: 2 }}>
+                      <FormControlLabel
+                        control={
+                          <Checkbox
+                            checked={playerFormData.isCaptain}
+                            onChange={handlePlayerFormChange}
+                            name="isCaptain"
+                          />
+                        }
+                        label="Captain"
                       />
-                    }
-                    label="Captain"
-                    sx={{ color: '#424242' }}
-                  />
-                  <FormControlLabel
-                    control={
-                      <Checkbox
-                        name="isWicketKeeper"
-                        checked={playerFormData.isWicketKeeper}
-                        onChange={handlePlayerFormChange}
-                        sx={{ color: '#1b5e20', '&.Mui-checked': { color: '#1b5e20' } }}
+                      <FormControlLabel
+                        control={
+                          <Checkbox
+                            checked={playerFormData.isWicketKeeper}
+                            onChange={handlePlayerFormChange}
+                            name="isWicketKeeper"
+                          />
+                        }
+                        label="Wicket Keeper"
                       />
-                    }
-                    label="Wicket Keeper"
-                    sx={{ color: '#424242' }}
-                  />
-                </Box>
+                    </Box>
+        
+                    {/* Current Team Players List */}
+                    <Typography variant="h6" sx={{ mt: 3, mb: 2 }}>
+                      Current Players
+                    </Typography>
+                    <List>
+                      {players
+                        .filter(p => p.teamId === selectedTeamId)
+                        .map(player => (
+                          <ListItem
+                            key={player.id}
+                            secondaryAction={
+                              <IconButton 
+                                edge="end" 
+                                onClick={() => handleRemovePlayer(player.id)}
+                              >
+                                <DeleteIcon />
+                              </IconButton>
+                            }
+                          >
+                            <ListItemText
+                              primary={player.name}
+                              secondary={`${player.role}${player.isCaptain ? ' (Captain)' : ''}${player.isWicketKeeper ? ' (WK)' : ''}`}
+                            />
+                          </ListItem>
+                        ))}
+                    </List>
+                  </>
+                )}
               </DialogContent>
               <DialogActions sx={{ bgcolor: '#f5f5f5', p: 2 }}>
-                <Button
-                  onClick={handlePlayerDialogClose}
-                  sx={{ color: '#424242', borderRadius: '8px' }}
-                >
+                <Button onClick={handlePlayerDialogClose}>
                   Cancel
                 </Button>
-                <ActionButton
-                  onClick={handleCreatePlayer}
-                  disabled={loading || !playerFormData.name || !selectedTeamId}
+                <Button
+                  onClick={handleAddPlayerToTeam}
+                  disabled={!playerFormData.playerId}
+                  variant="contained"
+                  sx={{ bgcolor: '#1b5e20' }}
                 >
-                  {loading ? <CircularProgress size={24} color="inherit" /> : 'Add Player'}
-                </ActionButton>
+                  Add Player
+                </Button>
               </DialogActions>
             </Dialog>
   
@@ -2101,7 +2477,7 @@ const EnhancedLeagueManagement = () => {
                       <StyledCard sx={{ bgcolor: '#ffebee' }}>
                         <CardContent>
                           <Typography variant="h6" sx={{ color: '#d32f2f', fontWeight: 'bold' }}>
-                            Current Score
+                            Batting Team: {teams.find(t => t.id === battingTeam)?.name}
                           </Typography>
                           <Typography variant="h5" sx={{ color: '#1b5e20' }}>
                             {teams.find((t) => t.id === selectedMatch.battingTeam)?.name}: {selectedMatch.score[selectedMatch.battingTeam === selectedMatch.team1Id ? 'team1' : 'team2'].runs}/
@@ -2119,8 +2495,30 @@ const EnhancedLeagueManagement = () => {
                               sx={{ bgcolor: '#ffffff', borderRadius: '8px' }}
                             >
                               {players
-                                .filter((p) => p.teamId === selectedMatch.battingTeam)
-                                .map((player) => (
+                                .filter(p => p.teamId === battingTeam && 
+                                  p.id !== scoringData.nonStrikerId &&
+                                  !p.isOut)
+                                .map(player => (
+                                  <MenuItem key={player.id} value={player.id}>
+                                    {player.name}
+                                  </MenuItem>
+                                ))}
+                            </Select>
+                          </FormControl>
+                          <FormControl fullWidth margin="normal">
+                            <InputLabel sx={{ color: '#1b5e20' }}>Non-Striker</InputLabel>
+                            <Select
+                              name="nonStrikerId"
+                              value={scoringData.nonStrikerId}
+                              onChange={handleScoringChange}
+                              label="Non-Striker"
+                              sx={{ bgcolor: '#ffffff', borderRadius: '8px' }}
+                            >
+                              {players
+                                .filter(p => p.teamId === battingTeam && 
+                                  p.id !== scoringData.batsmanId &&
+                                  !p.isOut)
+                                .map(player => (
                                   <MenuItem key={player.id} value={player.id}>
                                     {player.name}
                                   </MenuItem>
@@ -2129,17 +2527,22 @@ const EnhancedLeagueManagement = () => {
                           </FormControl>
                           <Typography variant="h6" sx={{ mt: 2, color: '#1b5e20' }}>Current Bowler</Typography>
                           <FormControl fullWidth margin="normal">
-                            <InputLabel sx={{ color: '#1b5e20' }}>Bowler</InputLabel>
+                            <InputLabel sx={{ color: '#1b5e20' }}>Current Bowler</InputLabel>
                             <Select
                               name="bowlerId"
                               value={scoringData.bowlerId}
                               onChange={handleScoringChange}
-                              label="Bowler"
+                              label="Current Bowler"
                               sx={{ bgcolor: '#ffffff', borderRadius: '8px' }}
                             >
                               {players
-                                .filter((p) => p.teamId !== selectedMatch.battingTeam)
-                                .map((player) => (
+                                .filter(p => {
+                                  const fieldingTeamId = selectedMatch.team1Id === battingTeam 
+                                    ? selectedMatch.team2Id 
+                                    : selectedMatch.team1Id;
+                                  return p.teamId === fieldingTeamId;
+                                })
+                                .map(player => (
                                   <MenuItem key={player.id} value={player.id}>
                                     {player.name}
                                   </MenuItem>
@@ -2220,6 +2623,35 @@ const EnhancedLeagueManagement = () => {
                           <Typography sx={{ mt: 2, color: '#1b5e20' }}>
                             Over: {scoringData.over}.{scoringData.ball}
                           </Typography>
+                          <Box sx={{ mt: 2, bgcolor: '#fff', p: 2, borderRadius: '8px' }}>
+                            <Typography variant="h6" sx={{ color: '#1b5e20', mb: 1 }}>
+                              Batting Statistics
+                            </Typography>
+                            {scoringData.batsmanId && (
+                              <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1 }}>
+                                <Typography sx={{ fontWeight: 'bold' }}>
+                                  {players.find(p => p.id === scoringData.batsmanId)?.name} *
+                                </Typography>
+                                <Typography>
+                                  {players.find(p => p.id === scoringData.batsmanId)?.stats?.runs || 0} 
+                                  ({players.find(p => p.id === scoringData.batsmanId)?.stats?.ballsFaced || 0})
+                                  SR: {players.find(p => p.id === scoringData.batsmanId)?.stats?.strikeRate || 0}
+                                </Typography>
+                              </Box>
+                            )}
+                            {scoringData.nonStrikerId && (
+                              <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                                <Typography sx={{ fontWeight: 'bold' }}>
+                                  {players.find(p => p.id === scoringData.nonStrikerId)?.name}
+                                </Typography>
+                                <Typography>
+                                  {players.find(p => p.id === scoringData.nonStrikerId)?.stats?.runs || 0}
+                                  ({players.find(p => p.id === scoringData.nonStrikerId)?.stats?.ballsFaced || 0})
+                                  SR: {players.find(p => p.id === scoringData.nonStrikerId)?.stats?.strikeRate || 0}
+                                </Typography>
+                              </Box>
+                            )}
+                          </Box>
                         </CardContent>
                       </StyledCard>
                     </Grid>

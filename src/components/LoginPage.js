@@ -1,61 +1,64 @@
 import React, { useContext, useState } from 'react';
-import {
-  Container,
-  Typography,
-  Button,
-  Box,
-  TextField,
-  CircularProgress,
-  Alert,
-} from '@mui/material';
-import GoogleIcon from '@mui/icons-material/Google';
 import { useNavigate } from 'react-router-dom';
 import { AuthContext } from '../context/AuthContext';
-import { auth } from '../firebase';
+import { auth, db } from '../firebase';
 import {
   createUserWithEmailAndPassword,
   signInWithEmailAndPassword,
+  sendEmailVerification,
 } from 'firebase/auth';
-import { styled } from '@mui/material/styles';
+import { doc, setDoc, getDoc } from 'firebase/firestore';
+import {
+  Box,
+  Container,
+  Paper,
+  Typography,
+  TextField,
+  Button,
+  Select,
+  MenuItem,
+  FormControl,
+  InputLabel,
+  Divider,
+  Alert,
+  IconButton,
+  styled
+} from '@mui/material';
+import GoogleIcon from '@mui/icons-material/Google';
+import SportsCricketIcon from '@mui/icons-material/SportsCricket';
 
-const HeroBox = styled(Box)(({ theme }) => ({
-  background: 'linear-gradient(45deg, #0288d1, #f57c00)',
+// Styled Components
+const StyledPaper = styled(Paper)(({ theme }) => ({
+  position: 'relative',
+  padding: theme.spacing(4),
+  background: 'rgba(255, 255, 255, 0.1)',
+  backdropFilter: 'blur(10px)',
+  borderRadius: 24,
+  boxShadow: '0 4px 30px rgba(0, 0, 0, 0.1)',
+  border: '1px solid rgba(255, 255, 255, 0.2)',
+}));
+
+const LoginContainer = styled(Box)({
   minHeight: '100vh',
   display: 'flex',
   alignItems: 'center',
   justifyContent: 'center',
-  color: '#ffffff',
-  textAlign: 'center',
-  padding: theme.spacing(4),
-  [theme.breakpoints.down('sm')]: {
-    padding: theme.spacing(2),
-  },
-}));
+  background: 'linear-gradient(135deg, #1a3c34 0%, #2e7d32 100%)',
+  padding: '20px',
+});
 
-const AuthButton = styled(Button)(({ theme }) => ({
-  background: 'linear-gradient(45deg, #ffffff, #e0e0e0)',
-  color: '#212121',
-  padding: theme.spacing(1.5, 4),
-  fontSize: '1.2rem',
-  fontWeight: 'bold',
-  borderRadius: '30px',
-  boxShadow: '0 4px 15px rgba(0, 0, 0, 0.2)',
-  transition: 'transform 0.3s ease',
-  '&:hover': {
-    transform: 'scale(1.05)',
-    background: 'linear-gradient(45deg, #e0e0e0, #ffffff)',
-  },
-}));
-
-const FormCard = styled(Box)(({ theme }) => ({
-  backgroundColor: 'rgba(0, 0, 0, 0.2)',
-  backdropFilter: 'blur(10px)',
-  borderRadius: '16px',
-  padding: theme.spacing(4),
-  boxShadow: '0 8px 32px rgba(0, 0, 0, 0.1)',
-  width: '100%',
-  [theme.breakpoints.down('sm')]: {
-    padding: theme.spacing(3),
+const LogoCircle = styled(Box)(({ theme }) => ({
+  width: 80,
+  height: 80,
+  borderRadius: '50%',
+  backgroundColor: '#fff',
+  display: 'flex',
+  alignItems: 'center',
+  justifyContent: 'center',
+  margin: '0 auto 20px',
+  '& svg': {
+    fontSize: 40,
+    color: '#1a3c34',
   },
 }));
 
@@ -63,220 +66,198 @@ const LoginPage = () => {
   const { login } = useContext(AuthContext);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const [confirmPassword, setConfirmPassword] = useState('');
+  const [role, setRole] = useState('Fan');
   const [isSignup, setIsSignup] = useState(false);
-  const [error, setError] = useState('');
-  const [isLoading, setIsLoading] = useState(false);
-  const [success, setSuccess] = useState('');
+  const [snackbar, setSnackbar] = useState({ open: false, message: '', severity: 'error' });
   const navigate = useNavigate();
-
-  const validateForm = () => {
-    // Reset error and success messages
-    setError('');
-    setSuccess('');
-
-    // Validate email format
-    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-    if (!emailRegex.test(email)) {
-      setError('Please enter a valid email address.');
-      return false;
-    }
-
-    // Validate password
-    if (password.length < 6) {
-      setError('Password must be at least 6 characters long.');
-      return false;
-    }
-
-    // Validate password confirmation for signup
-    if (isSignup && password !== confirmPassword) {
-      setError('Passwords do not match.');
-      return false;
-    }
-
-    return true;
-  };
 
   const handleEmailAuth = async (e) => {
     e.preventDefault();
-    
-    // Validate form inputs
-    if (!validateForm()) {
-      return;
-    }
-
-    setIsLoading(true);
+    setSnackbar({ open: false, message: '', severity: 'error' });
     try {
-      console.log(`Initiating email ${isSignup ? 'signup' : 'signin'} with`, email);
-      
       if (isSignup) {
-        // Create new user
-        await createUserWithEmailAndPassword(auth, email, password);
-        console.log('Email signup successful');
-        setSuccess('Account created successfully! You can now sign in.');
-        // Reset form and switch to signin mode after successful signup
-        setEmail('');
-        setPassword('');
-        setConfirmPassword('');
-        setIsSignup(false);
+        const userCredential = await createUserWithEmailAndPassword(auth, email, password);
+        const newUser = userCredential.user;
+        await setDoc(doc(db, 'users', newUser.uid), {
+          email: newUser.email,
+          role: role,
+          createdAt: new Date(),
+        });
+        await sendEmailVerification(newUser);
+        setSnackbar({
+          open: true,
+          message: 'Account created! Please verify your email.',
+          severity: 'success',
+        });
+        navigate('/login', { replace: true });
       } else {
-        // Sign in existing user
         await signInWithEmailAndPassword(auth, email, password);
-        console.log('Email signin successful');
-        navigate('/', { replace: true });
+        const userDoc = await getDoc(doc(db, 'users', auth.currentUser.uid));
+        const userRole = userDoc.exists() ? userDoc.data().role : 'Fan';
+        navigate(userRole === 'Organizer' ? '/organizer' : '/', { replace: true });
       }
     } catch (error) {
-      console.error('Email auth error:', error);
-      // Format Firebase error messages to be more user-friendly
-      let errorMessage = 'Authentication failed. Please try again.';
-      
-      if (error.code === 'auth/email-already-in-use') {
-        errorMessage = 'An account with this email already exists.';
-      } else if (error.code === 'auth/wrong-password') {
-        errorMessage = 'Incorrect password. Please try again.';
-      } else if (error.code === 'auth/user-not-found') {
-        errorMessage = 'No account found with this email address.';
-      } else if (error.code === 'auth/too-many-requests') {
-        errorMessage = 'Too many failed login attempts. Please try again later.';
-      } else if (error.code === 'auth/invalid-email') {
-        errorMessage = 'Invalid email format.';
-      } else if (error.code === 'auth/weak-password') {
-        errorMessage = 'Password is too weak. Please use a stronger password.';
-      }
-      
-      setError(errorMessage);
-    } finally {
-      setIsLoading(false);
+      setSnackbar({
+        open: true,
+        message: error.message,
+        severity: 'error',
+      });
     }
   };
 
   const handleGoogleLogin = async () => {
-    setError('');
-    setIsLoading(true);
     try {
       await login();
-      navigate('/', { replace: true });
+      const userDoc = await getDoc(doc(db, 'users', auth.currentUser.uid));
+      const userRole = userDoc.exists() ? userDoc.data().role : 'Fan';
+      navigate(userRole === 'Organizer' ? '/organizer' : '/', { replace: true });
     } catch (error) {
-      console.error('Google login error:', error);
-      setError('Google sign-in failed. Please try again.');
-    } finally {
-      setIsLoading(false);
+      setSnackbar({
+        open: true,
+        message: error.message || 'Google login failed. Please try again.',
+        severity: 'error',
+      });
     }
   };
 
-  const toggleMode = () => {
-    // Reset form when switching between signup and signin
-    setIsSignup(!isSignup);
-    setEmail('');
-    setPassword('');
-    setConfirmPassword('');
-    setError('');
-    setSuccess('');
-  };
-
   return (
-    <HeroBox>
+    <LoginContainer>
       <Container maxWidth="sm">
-        <FormCard>
-          <Typography
-            variant="h2"
-            component="h1"
-            gutterBottom
-            sx={{ fontWeight: 'bold', fontFamily: 'Poppins, sans-serif', fontSize: { xs: '2rem', sm: '2.5rem', md: '3rem' } }}
-          >
+        <StyledPaper elevation={3}>
+          <LogoCircle>
+            <SportsCricketIcon />
+          </LogoCircle>
+
+          <Typography variant="h4" align="center" gutterBottom sx={{ color: '#fff', fontWeight: 'bold' }}>
             Live Cricket Score
           </Typography>
-          <Typography
-            variant="h5"
-            gutterBottom
-            sx={{ mb: 4, fontFamily: 'Roboto, sans-serif' }}
-          >
-            {isSignup
-              ? 'Create an account to access real-time cricket updates'
-              : 'Sign in to access real-time cricket updates'}
+          <Typography variant="subtitle1" align="center" sx={{ color: '#fff', mb: 4 }}>
+            Inter/Intra University Tournaments
           </Typography>
-          
-          {success && (
-            <Alert severity="success" sx={{ mb: 2 }}>
-              {success}
-            </Alert>
-          )}
-          
-          {error && (
-            <Alert severity="error" sx={{ mb: 2 }}>
-              {error}
-            </Alert>
-          )}
-          
-          <form
-            onSubmit={handleEmailAuth}
-            style={{ display: 'flex', flexDirection: 'column', gap: '16px', marginBottom: '20px' }}
-          >
+
+          <form onSubmit={handleEmailAuth}>
             <TextField
-              label="Email"
+              fullWidth
               type="email"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
+              placeholder="Email"
               required
-              fullWidth
-              variant="filled"
-              sx={{ backgroundColor: 'rgba(255, 255, 255, 0.9)', borderRadius: '8px' }}
-              disabled={isLoading}
+              variant="outlined"
+              sx={{
+                mb: 2,
+                '& .MuiOutlinedInput-root': {
+                  color: '#fff',
+                  '& fieldset': { borderColor: 'rgba(255, 255, 255, 0.3)' },
+                  '&:hover fieldset': { borderColor: 'rgba(255, 255, 255, 0.5)' },
+                },
+                '& .MuiInputLabel-root': { color: 'rgba(255, 255, 255, 0.7)' },
+              }}
             />
+
             <TextField
-              label="Password"
+              fullWidth
               type="password"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
+              placeholder="Password"
               required
-              fullWidth
-              variant="filled"
-              sx={{ backgroundColor: 'rgba(255, 255, 255, 0.9)', borderRadius: '8px' }}
-              disabled={isLoading}
+              variant="outlined"
+              sx={{
+                mb: 2,
+                '& .MuiOutlinedInput-root': {
+                  color: '#fff',
+                  '& fieldset': { borderColor: 'rgba(255, 255, 255, 0.3)' },
+                  '&:hover fieldset': { borderColor: 'rgba(255, 255, 255, 0.5)' },
+                },
+              }}
             />
+
             {isSignup && (
-              <TextField
-                label="Confirm Password"
-                type="password"
-                value={confirmPassword}
-                onChange={(e) => setConfirmPassword(e.target.value)}
-                required
-                fullWidth
-                variant="filled"
-                sx={{ backgroundColor: 'rgba(255, 255, 255, 0.9)', borderRadius: '8px' }}
-                disabled={isLoading}
-              />
+              <FormControl fullWidth variant="outlined" sx={{ mb: 2 }}>
+                <InputLabel sx={{ color: 'rgba(255, 255, 255, 0.7)' }}>Role</InputLabel>
+                <Select
+                  value={role}
+                  onChange={(e) => setRole(e.target.value)}
+                  label="Role"
+                  sx={{
+                    color: '#fff',
+                    '& .MuiOutlinedInput-notchedOutline': {
+                      borderColor: 'rgba(255, 255, 255, 0.3)',
+                    },
+                  }}
+                >
+                  <MenuItem value="Fan">Fan</MenuItem>
+                  <MenuItem value="Player">Player</MenuItem>
+                  <MenuItem value="Umpire">Umpire</MenuItem>
+                  <MenuItem value="Organizer">Organizer</MenuItem>
+                </Select>
+              </FormControl>
             )}
-            
-            <AuthButton type="submit" disabled={isLoading}>
-              {isLoading ? <CircularProgress size={24} /> : isSignup ? 'Sign Up' : 'Sign In'}
-            </AuthButton>
-          </form>
-          
-          <Typography variant="h6" sx={{ mb: 2 }}>
-            Or
-          </Typography>
-          
-          <AuthButton 
-            startIcon={<GoogleIcon />} 
-            onClick={handleGoogleLogin}
-            disabled={isLoading}
-          >
-            {isLoading ? <CircularProgress size={24} /> : 'Sign In with Google'}
-          </AuthButton>
-          
-          <Box sx={{ mt: 3 }}>
+
             <Button
-              onClick={toggleMode}
-              sx={{ color: '#ffffff', textDecoration: 'underline' }}
-              disabled={isLoading}
+              type="submit"
+              fullWidth
+              variant="contained"
+              sx={{
+                mb: 2,
+                bgcolor: '#2e7d32',
+                '&:hover': { bgcolor: '#1b5e20' },
+                py: 1.5,
+                borderRadius: 2,
+              }}
             >
-              {isSignup ? 'Already have an account? Sign In' : 'Need an account? Sign Up'}
+              {isSignup ? 'Sign Up' : 'Sign In'}
             </Button>
-          </Box>
-        </FormCard>
+          </form>
+
+          <Divider sx={{ my: 3, bgcolor: 'rgba(255, 255, 255, 0.2)' }}>
+            <Typography sx={{ color: 'rgba(255, 255, 255, 0.7)' }}>or</Typography>
+          </Divider>
+
+          <Button
+            fullWidth
+            variant="outlined"
+            onClick={handleGoogleLogin}
+            startIcon={<GoogleIcon />}
+            sx={{
+              color: '#fff',
+              borderColor: 'rgba(255, 255, 255, 0.3)',
+              '&:hover': { borderColor: 'rgba(255, 255, 255, 0.5)' },
+              mb: 2,
+            }}
+          >
+            Sign in with Google
+          </Button>
+
+          <Button
+            fullWidth
+            onClick={() => setIsSignup(!isSignup)}
+            sx={{ color: 'rgba(255, 255, 255, 0.7)' }}
+          >
+            {isSignup ? 'Already have an account? Sign In' : 'Need an account? Sign Up'}
+          </Button>
+        </StyledPaper>
+
+        {snackbar.open && (
+          <Alert
+            severity={snackbar.severity}
+            sx={{ mt: 2 }}
+            action={
+              <IconButton
+                color="inherit"
+                size="small"
+                onClick={() => setSnackbar({ ...snackbar, open: false })}
+              >
+                ×
+              </IconButton>
+            }
+          >
+            {snackbar.message}
+          </Alert>
+        )}
       </Container>
-    </HeroBox>
+    </LoginContainer>
   );
 };
 

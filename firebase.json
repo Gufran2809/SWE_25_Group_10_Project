@@ -12,5 +12,23 @@
         "destination": "/index.html"
       }
     ]
-  }
+  },
+  "indexes": [
+    {
+      "collectionGroup": "players",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "team", "order": "ASCENDING" },
+        { "fieldPath": "stats.overall.batting.runs", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "players",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "team", "order": "ASCENDING" },
+        { "fieldPath": "stats.overall.bowling.wickets", "order": "DESCENDING" }
+      ]
+    }
+  ]
 }

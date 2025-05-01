@@ -1,440 +1,695 @@
 import React, { useState, useEffect } from 'react';
-import {
-  Container,
-  Typography,
-  Tabs,
-  Tab,
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
+import { 
+  Container, 
+  Typography, 
+  Box, 
+  Tabs, 
+  Tab, 
+  Paper, 
+  Grid, 
+  TextField, 
+  InputAdornment, 
+  FormControl, 
+  InputLabel, 
+  Select, 
+  MenuItem, 
+  Card, 
+  CardContent, 
+  Table, 
+  TableBody, 
+  TableCell, 
+  TableContainer, 
+  TableHead, 
   TableRow,
-  TextField,
-  MenuItem,
+  TableSortLabel,
+  Divider,
   Button,
-  Grid,
-  CircularProgress,
-  Snackbar,
-  Box,
+  CircularProgress
 } from '@mui/material';
-import { Link } from 'react-router-dom';
-import { db } from '../firebase';
-import { collection, query, orderBy, getDocs, where } from 'firebase/firestore';
-import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts';
-import { saveAs } from 'file-saver';
-import { styled } from '@mui/material/styles';
+import SearchIcon from '@mui/icons-material/Search';
+import FilterListIcon from '@mui/icons-material/FilterList';
+import SportsIcon from '@mui/icons-material/Sports';
+import EmojiEventsIcon from '@mui/icons-material/EmojiEvents';
+import TimelineIcon from '@mui/icons-material/Timeline';
+import EqualizerIcon from '@mui/icons-material/Equalizer';
+import DownloadIcon from '@mui/icons-material/Download';
+import TrendingUpIcon from '@mui/icons-material/TrendingUp';
+import TrendingDownIcon from '@mui/icons-material/TrendingDown';
+import TrendingFlatIcon from '@mui/icons-material/TrendingFlat';
 import PlayerProfiles from './PlayerProfiles';
+import { db } from '../firebase';
+import { collection, getDocs, query, where, orderBy as firestoreOrderBy } from 'firebase/firestore';
 
-const StyledTable = styled(Table)(({ theme }) => ({
-  '& th, & td': {
-    border: '1px solid #e0e0e0',
-  },
-  '& th': {
-    backgroundColor: '#1b5e20',
-    color: 'white',
-  },
-}));
+const getTrendIcon = (trend) => {
+  switch(trend) {
+    case 'up':
+      return <TrendingUpIcon sx={{ color: 'success.main' }} />;
+    case 'down':
+      return <TrendingDownIcon sx={{ color: 'error.main' }} />;
+    default:
+      return <TrendingFlatIcon sx={{ color: 'info.main' }} />;
+  }
+};
 
 const PlayerStats = () => {
   const [tabValue, setTabValue] = useState(0);
-  const [filter, setFilter] = useState({ tournament: '', team: '', matchType: '' });
-  const [statsData, setStatsData] = useState({
-    batting: [],
-    bowling: [],
-    fielding: [],
-    allRounders: [],
-    teams: [],
-    records: [],
-  });
-  const [loading, setLoading] = useState(false);
-  const [snackbar, setSnackbar] = useState({ open: false, message: '' });
+  const [searchQuery, setSearchQuery] = useState('');
+  const [league, setLeague] = useState('');
+  const [team, setTeam] = useState('');
+  const [loading, setLoading] = useState(true);
+  const [orderBy, setOrderBy] = useState('');
+  const [order, setOrder] = useState('asc');
+  const [players, setPlayers] = useState([]);
+  const [leagues, setLeagues] = useState([]);
+  const [teams, setTeams] = useState([]);
 
+  // Fetch initial data
   useEffect(() => {
-    const fetchStats = async () => {
+    const fetchInitialData = async () => {
       setLoading(true);
       try {
-        // Fetch batting stats
-        let battingQuery = query(collection(db, 'players'), orderBy('stats.batting.runs', 'desc'));
-        if (filter.tournament || filter.team || filter.matchType) {
-          battingQuery = query(
-            battingQuery,
-            ...(filter.tournament ? [where('tournamentId', '==', filter.tournament)] : []),
-            ...(filter.team ? [where('teamId', '==', filter.team)] : []),
-            ...(filter.matchType ? [where('matchType', '==', filter.matchType)] : [])
-          );
-        }
-        const battingSnapshot = await getDocs(battingQuery);
-        const battingData = battingSnapshot.docs.map((doc) => ({
+        // Fetch leagues
+        const leaguesSnapshot = await getDocs(collection(db, 'leagues'));
+        setLeagues(leaguesSnapshot.docs.map(doc => ({
           id: doc.id,
-          ...doc.data(),
-          stats: doc.data().stats?.batting || { runs: 0, average: 0, centuries: 0 },
-        }));
+          ...doc.data()
+        })));
 
-        // Fetch bowling stats
-        let bowlingQuery = query(collection(db, 'players'), orderBy('stats.bowling.wickets', 'desc'));
-        if (filter.tournament || filter.team || filter.matchType) {
-          bowlingQuery = query(
-            bowlingQuery,
-            ...(filter.tournament ? [where('tournamentId', '==', filter.tournament)] : []),
-            ...(filter.team ? [where('teamId', '==', filter.team)] : []),
-            ...(filter.matchType ? [where('matchType', '==', filter.matchType)] : [])
-          );
-        }
-        const bowlingSnapshot = await getDocs(bowlingQuery);
-        const bowlingData = bowlingSnapshot.docs.map((doc) => ({
+        // Fetch teams
+        const teamsSnapshot = await getDocs(collection(db, 'teams'));
+        setTeams(teamsSnapshot.docs.map(doc => ({
           id: doc.id,
-          ...doc.data(),
-          stats: doc.data().stats?.bowling || { wickets: 0, average: 0, best: '0/0' },
-        }));
+          ...doc.data()
+        })));
 
-        // Fetch team stats
-        let teamsQuery = query(collection(db, 'teams'), orderBy('stats.wins', 'desc'));
-        if (filter.tournament) {
-          teamsQuery = query(teamsQuery, where('tournamentId', '==', filter.tournament));
-        }
-        const teamsSnapshot = await getDocs(teamsQuery);
-        const teamsData = teamsSnapshot.docs.map((doc) => ({
-          id: doc.id,
-          ...doc.data(),
-          stats: doc.data().stats || { wins: 0, losses: 0, netRunRate: 0 },
-        }));
-
-        setStatsData({
-          batting: battingData,
-          bowling: bowlingData,
-          fielding: [], // Placeholder
-          allRounders: battingData.filter((p) => p.role === 'All-Rounder'),
-          teams: teamsData,
-          records: [
-            { type: 'Highest Score', player: 'John Doe', value: '150*', matchId: 'm1' },
-            { type: 'Best Bowling', player: 'Jane Smith', value: '5/20', matchId: 'm2' },
-          ],
-        });
+        // Fetch players
+        await fetchPlayers();
       } catch (error) {
-        console.error('Error fetching stats:', error);
-        setSnackbar({ open: true, message: 'Failed to load statistics. Showing sample data.' });
-        setStatsData({
-          batting: [
-            {
-              id: '1',
-              name: 'John Doe',
-              stats: { runs: 450, average: 45.0, centuries: 1 },
-            },
-          ],
-          bowling: [
-            {
-              id: '2',
-              name: 'Jane Smith',
-              stats: { wickets: 15, average: 20.5, best: '4/25' },
-            },
-          ],
-          fielding: [],
-          allRounders: [
-            {
-              id: '3',
-              name: 'Mike Brown',
-              role: 'All-Rounder',
-              stats: { batting: { runs: 300 }, bowling: { wickets: 10 } },
-            },
-          ],
-          teams: [
-            { id: 'team1', name: 'Team A', stats: { wins: 5, losses: 2, netRunRate: 0.5 } },
-          ],
-          records: [
-            { type: 'Highest Score', player: 'John Doe', value: '150*', matchId: 'm1' },
-          ],
-        });
-      } finally {
-        setLoading(false);
+        console.error('Error fetching initial data:', error);
       }
+      setLoading(false);
     };
-    fetchStats();
-  }, [filter]);
 
+    fetchInitialData();
+  }, []);
+
+  // Fetch players with filters
+  const fetchPlayers = async () => {
+    try {
+      let q = collection(db, 'players');
+
+      if (team) {
+        q = query(q, where('team', '==', team));
+      }
+
+      if (league) {
+        q = query(q, where('leagues', 'array-contains', league));
+      }
+
+      if (orderBy) {
+        // Handle nested field sorting
+        const orderByField = `stats.overall.${orderBy}`;
+        q = query(q, firestoreOrderBy(orderByField, order));
+      }
+
+      const snapshot = await getDocs(q);
+      let playersData = snapshot.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data()
+      }));
+
+      // Apply search filter client-side
+      if (searchQuery) {
+        playersData = playersData.filter(player =>
+          player.name.toLowerCase().includes(searchQuery.toLowerCase())
+        );
+      }
+
+      setPlayers(playersData);
+    } catch (error) {
+      console.error('Error fetching players:', error);
+    }
+  };
+
+  // Update filters effect
+  useEffect(() => {
+    fetchPlayers();
+  }, [team, league, orderBy, order]);
+
+  // Update search effect (debounced)
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      fetchPlayers();
+    }, 300);
+
+    return () => clearTimeout(timer);
+  }, [searchQuery]);
+
+  // Handle tab change
   const handleTabChange = (event, newValue) => {
     setTabValue(newValue);
   };
 
-  const handleFilterChange = (e) => {
-    const { name, value } = e.target;
-    setFilter({ ...filter, [name]: value });
+  // Handle sorting
+  const handleRequestSort = (property) => {
+    const isAsc = orderBy === property && order === 'asc';
+    setOrder(isAsc ? 'desc' : 'asc');
+    setOrderBy(property);
   };
 
-  const exportToCSV = () => {
-    const headers = ['Player/Team', 'Stat', 'Value'];
-    const data = [];
-    if (tabValue === 0) {
-      statsData.batting.forEach((p) =>
-        data.push([p.name, 'Runs', p.stats.runs], [p.name, 'Average', p.stats.average])
-      );
-    } else if (tabValue === 1) {
-      statsData.bowling.forEach((p) =>
-        data.push([p.name, 'Wickets', p.stats.wickets], [p.name, 'Average', p.stats.average])
-      );
-    }
-    const csv = [headers, ...data].map((row) => row.join(',')).join('\n');
-    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' });
-    saveAs(blob, 'stats.csv');
-  };
+  // Function to render batting leaders table
+  const renderBattingLeaders = () => (
+    <TableContainer component={Paper} elevation={2}>
+      <Table aria-label="batting leaders table">
+        <TableHead>
+          <TableRow>
+            <TableCell>Rank</TableCell>
+            <TableCell>Player</TableCell>
+            <TableCell>Team</TableCell>
+            <TableCell>Matches</TableCell>
+            <TableCell>Runs</TableCell>
+            <TableCell>Average</TableCell>
+            <TableCell>Strike Rate</TableCell>
+            <TableCell>50s/100s</TableCell>
+            <TableCell>Form</TableCell>
+          </TableRow>
+        </TableHead>
+        <TableBody>
+          {loading ? (
+            <TableRow>
+              <TableCell colSpan={9} align="center"><CircularProgress /></TableCell>
+            </TableRow>
+          ) : (
+            players
+              .filter(player => player.stats?.overall?.batting)
+              .sort((a, b) => {
+                const runsA = a.stats.overall.batting.runs || 0;
+                const runsB = b.stats.overall.batting.runs || 0;
+                return runsB - runsA;
+              })
+              .map((player, index) => (
+                <TableRow key={player.id}>
+                  <TableCell>{index + 1}</TableCell>
+                  <TableCell>{player.name}</TableCell>
+                  <TableCell>{player.team}</TableCell>
+                  <TableCell>{player.stats.overall.matches}</TableCell>
+                  <TableCell>{player.stats.overall.batting.runs}</TableCell>
+                  <TableCell>{player.stats.overall.batting.average?.toFixed(2) ?? '-'}</TableCell>
+                  <TableCell>{player.stats.overall.batting.strikeRate?.toFixed(2) ?? '-'}</TableCell>
+                  <TableCell>
+                    {player.stats.overall.batting.fifties ?? 0}/
+                    {player.stats.overall.batting.hundreds ?? 0}
+                  </TableCell>
+                  <TableCell>{getTrendIcon(player.form)}</TableCell>
+                </TableRow>
+              ))
+          )}
+        </TableBody>
+      </Table>
+    </TableContainer>
+  );
 
-  const getGraphData = () => {
-    if (tabValue === 0) {
-      return statsData.batting.slice(0, 5).map((p) => ({
-        name: p.name,
-        value: p.stats.runs,
-      }));
-    } else if (tabValue === 1) {
-      return statsData.bowling.slice(0, 5).map((p) => ({
-        name: p.name,
-        value: p.stats.wickets,
-      }));
+  // Function to render bowling leaders table
+  const renderBowlingLeaders = () => (
+    <TableContainer component={Paper} elevation={2}>
+      <Table aria-label="bowling leaders table">
+        <TableHead>
+          <TableRow sx={{ backgroundColor: 'primary.light' }}>
+            <TableCell>Rank</TableCell>
+            <TableCell>Player</TableCell>
+            <TableCell>Team</TableCell>
+            <TableCell>
+              <TableSortLabel
+                active={orderBy === 'matches'}
+                direction={orderBy === 'matches' ? order : 'asc'}
+                onClick={() => handleRequestSort('matches')}
+              >
+                Matches
+              </TableSortLabel>
+            </TableCell>
+            <TableCell>
+              <TableSortLabel
+                active={orderBy === 'wickets'}
+                direction={orderBy === 'wickets' ? order : 'desc'}
+                onClick={() => handleRequestSort('wickets')}
+              >
+                Wickets
+              </TableSortLabel>
+            </TableCell>
+            <TableCell>
+              <TableSortLabel
+                active={orderBy === 'avg'}
+                direction={orderBy === 'avg' ? order : 'asc'}
+                onClick={() => handleRequestSort('avg')}
+              >
+                Average
+              </TableSortLabel>
+            </TableCell>
+            <TableCell>
+              <TableSortLabel
+                active={orderBy === 'econ'}
+                direction={orderBy === 'econ' ? order : 'asc'}
+                onClick={() => handleRequestSort('econ')}
+              >
+                Economy
+              </TableSortLabel>
+            </TableCell>
+            <TableCell>Best</TableCell>
+            <TableCell>Form</TableCell>
+          </TableRow>
+        </TableHead>
+        <TableBody>
+          {loading ? (
+            <TableRow>
+              <TableCell colSpan={9} align="center" sx={{ py: 3 }}>
+                <CircularProgress />
+              </TableCell>
+            </TableRow>
+          ) : (
+            players
+              .filter(player => player.stats?.overall?.bowling)
+              .sort((a, b) => {
+                const wicketsA = a.stats.overall.bowling.wickets || 0;
+                const wicketsB = b.stats.overall.bowling.wickets || 0;
+                return wicketsB - wicketsA;
+              })
+              .map((player, index) => (
+                <TableRow 
+                  key={player.id}
+                  hover 
+                  sx={{ '&:nth-of-type(odd)': { backgroundColor: 'action.hover' } }}
+                >
+                  <TableCell component="th" scope="row">{index + 1}</TableCell>
+                  <TableCell>
+                    <Typography 
+                      variant="body2" 
+                      sx={{ 
+                        fontWeight: 'medium', 
+                        color: 'primary.main', 
+                        cursor: 'pointer',
+                        '&:hover': { textDecoration: 'underline' }
+                      }}
+                    >
+                      {player.name}
+                    </Typography>
+                  </TableCell>
+                  <TableCell>{player.team}</TableCell>
+                  <TableCell>{player.stats.overall.matches}</TableCell>
+                  <TableCell><strong>{player.stats.overall.bowling.wickets}</strong></TableCell>
+                  <TableCell>{player.stats.overall.bowling.average?.toFixed(2) ?? '-'}</TableCell>
+                  <TableCell>{player.stats.overall.bowling.economy?.toFixed(2) ?? '-'}</TableCell>
+                  <TableCell>{player.stats.overall.bowling.bestBowling}</TableCell>
+                  <TableCell>{getTrendIcon(player.form)}</TableCell>
+                </TableRow>
+              ))
+          )}
+        </TableBody>
+      </Table>
+    </TableContainer>
+  );
+
+  // Function to render all-rounders table
+  const renderAllRounders = () => (
+    <TableContainer component={Paper} elevation={2}>
+      <Table aria-label="all-rounders table">
+        <TableHead>
+          <TableRow sx={{ backgroundColor: 'primary.light' }}>
+            <TableCell>Rank</TableCell>
+            <TableCell>Player</TableCell>
+            <TableCell>Team</TableCell>
+            <TableCell>
+              <TableSortLabel
+                active={orderBy === 'matches'}
+                direction={orderBy === 'matches' ? order : 'asc'}
+                onClick={() => handleRequestSort('matches')}
+              >
+                Matches
+              </TableSortLabel>
+            </TableCell>
+            <TableCell>
+              <TableSortLabel
+                active={orderBy === 'runs'}
+                direction={orderBy === 'runs' ? order : 'desc'}
+                onClick={() => handleRequestSort('runs')}
+              >
+                Runs
+              </TableSortLabel>
+            </TableCell>
+            <TableCell>Bat Avg</TableCell>
+            <TableCell>
+              <TableSortLabel
+                active={orderBy === 'wickets'}
+                direction={orderBy === 'wickets' ? order : 'desc'}
+                onClick={() => handleRequestSort('wickets')}
+              >
+                Wickets
+              </TableSortLabel>
+            </TableCell>
+            <TableCell>Bowl Avg</TableCell>
+            <TableCell>Form</TableCell>
+          </TableRow>
+        </TableHead>
+        <TableBody>
+          {loading ? (
+            <TableRow>
+              <TableCell colSpan={9} align="center" sx={{ py: 3 }}>
+                <CircularProgress />
+              </TableCell>
+            </TableRow>
+          ) : (
+            players
+              .filter(player => 
+                player.role === 'all-rounder' &&
+                player.stats?.overall?.batting &&
+                player.stats?.overall?.bowling
+              )
+              .sort((a, b) => {
+                const pointsA = (a.stats.overall.batting.runs || 0) + (a.stats.overall.bowling.wickets * 20 || 0);
+                const pointsB = (b.stats.overall.batting.runs || 0) + (b.stats.overall.bowling.wickets * 20 || 0);
+                return pointsB - pointsA;
+              })
+              .map((player, index) => (
+                <TableRow 
+                  key={player.id} 
+                  hover
+                  sx={{ '&:nth-of-type(odd)': { backgroundColor: 'action.hover' } }}
+                >
+                  <TableCell component="th" scope="row">{index + 1}</TableCell>
+                  <TableCell>
+                    <Typography 
+                      variant="body2" 
+                      sx={{ 
+                        fontWeight: 'medium', 
+                        color: 'primary.main', 
+                        cursor: 'pointer',
+                        '&:hover': { textDecoration: 'underline' }
+                      }}
+                    >
+                      {player.name}
+                    </Typography>
+                  </TableCell>
+                  <TableCell>{player.team}</TableCell>
+                  <TableCell>{player.stats.overall.matches}</TableCell>
+                  <TableCell>{player.stats.overall.batting.runs}</TableCell>
+                  <TableCell>{player.stats.overall.batting.average?.toFixed(2) ?? '-'}</TableCell>
+                  <TableCell>{player.stats.overall.bowling.wickets}</TableCell>
+                  <TableCell>{player.stats.overall.bowling.average?.toFixed(2) ?? '-'}</TableCell>
+                  <TableCell>{getTrendIcon(player.form)}</TableCell>
+                </TableRow>
+              ))
+          )}
+        </TableBody>
+      </Table>
+    </TableContainer>
+  );
+
+  // Function to render records
+  const renderRecords = () => (
+    <Grid container spacing={3}>
+      <Grid item xs={12} md={6}>
+        <Card elevation={3}>
+          <CardContent>
+            <Typography variant="h6" gutterBottom sx={{ display: 'flex', alignItems: 'center' }}>
+              <EmojiEventsIcon sx={{ mr: 1 }} color="primary" /> Highest Scores
+            </Typography>
+            <TableContainer>
+              <Table size="small">
+                <TableHead>
+                  <TableRow>
+                    <TableCell>Player</TableCell>
+                    <TableCell>Score</TableCell>
+                    <TableCell>Against</TableCell>
+                    <TableCell>League</TableCell>
+                  </TableRow>
+                </TableHead>
+                <TableBody>
+                  <TableRow>
+                    <TableCell>Virat Kohli</TableCell>
+                    <TableCell>128*</TableCell>
+                    <TableCell>Team B</TableCell>
+                    <TableCell>UPL 2024</TableCell>
+                  </TableRow>
+                  <TableRow>
+                    <TableCell>Joe Root</TableCell>
+                    <TableCell>112</TableCell>
+                    <TableCell>Team E</TableCell>
+                    <TableCell>Campus Cricket</TableCell>
+                  </TableRow>
+                  <TableRow>
+                    <TableCell>Kane Williamson</TableCell>
+                    <TableCell>105</TableCell>
+                    <TableCell>Team C</TableCell>
+                    <TableCell>T20 Bash</TableCell>
+                  </TableRow>
+                </TableBody>
+              </Table>
+            </TableContainer>
+          </CardContent>
+        </Card>
+      </Grid>
+      <Grid item xs={12} md={6}>
+        <Card elevation={3}>
+          <CardContent>
+            <Typography variant="h6" gutterBottom sx={{ display: 'flex', alignItems: 'center' }}>
+              <EmojiEventsIcon sx={{ mr: 1 }} color="primary" /> Best Bowling
+            </Typography>
+            <TableContainer>
+              <Table size="small">
+                <TableHead>
+                  <TableRow>
+                    <TableCell>Player</TableCell>
+                    <TableCell>Figures</TableCell>
+                    <TableCell>Against</TableCell>
+                    <TableCell>League</TableCell>
+                  </TableRow>
+                </TableHead>
+                <TableBody>
+                  <TableRow>
+                    <TableCell>Jasprit Bumrah</TableCell>
+                    <TableCell>5/12</TableCell>
+                    <TableCell>Team C</TableCell>
+                    <TableCell>UPL 2024</TableCell>
+                  </TableRow>
+                  <TableRow>
+                    <TableCell>Kagiso Rabada</TableCell>
+                    <TableCell>4/15</TableCell>
+                    <TableCell>Team A</TableCell>
+                    <TableCell>ICC 2024</TableCell>
+                  </TableRow>
+                  <TableRow>
+                    <TableCell>Rashid Khan</TableCell>
+                    <TableCell>4/16</TableCell>
+                    <TableCell>Team D</TableCell>
+                    <TableCell>T20 Bash</TableCell>
+                  </TableRow>
+                </TableBody>
+              </Table>
+            </TableContainer>
+          </CardContent>
+        </Card>
+      </Grid>
+      <Grid item xs={12} md={6}>
+        <Card elevation={3}>
+          <CardContent>
+            <Typography variant="h6" gutterBottom sx={{ display: 'flex', alignItems: 'center' }}>
+              <TimelineIcon sx={{ mr: 1 }} color="primary" /> Fastest Centuries
+            </Typography>
+            <TableContainer>
+              <Table size="small">
+                <TableHead>
+                  <TableRow>
+                    <TableCell>Player</TableCell>
+                    <TableCell>Balls</TableCell>
+                    <TableCell>Against</TableCell>
+                    <TableCell>League</TableCell>
+                  </TableRow>
+                </TableHead>
+                <TableBody>
+                  <TableRow>
+                    <TableCell>Virat Kohli</TableCell>
+                    <TableCell>52</TableCell>
+                    <TableCell>Team D</TableCell>
+                    <TableCell>UPL 2024</TableCell>
+                  </TableRow>
+                  <TableRow>
+                    <TableCell>Steve Smith</TableCell>
+                    <TableCell>58</TableCell>
+                    <TableCell>Team B</TableCell>
+                    <TableCell>ICC 2024</TableCell>
+                  </TableRow>
+                  <TableRow>
+                    <TableCell>Babar Azam</TableCell>
+                    <TableCell>61</TableCell>
+                    <TableCell>Team E</TableCell>
+                    <TableCell>T20 Bash</TableCell>
+                  </TableRow>
+                </TableBody>
+              </Table>
+            </TableContainer>
+          </CardContent>
+        </Card>
+      </Grid>
+      <Grid item xs={12} md={6}>
+        <Card elevation={3}>
+          <CardContent>
+            <Typography variant="h6" gutterBottom sx={{ display: 'flex', alignItems: 'center' }}>
+              <EqualizerIcon sx={{ mr: 1 }} color="primary" /> Highest Partnerships
+            </Typography>
+            <TableContainer>
+              <Table size="small">
+                <TableHead>
+                  <TableRow>
+                    <TableCell>Players</TableCell>
+                    <TableCell>Runs</TableCell>
+                    <TableCell>Against</TableCell>
+                    <TableCell>League</TableCell>
+                  </TableRow>
+                </TableHead>
+                <TableBody>
+                  <TableRow>
+                    <TableCell>Kohli & Root</TableCell>
+                    <TableCell>182</TableCell>
+                    <TableCell>Team C</TableCell>
+                    <TableCell>UPL 2024</TableCell>
+                  </TableRow>
+                  <TableRow>
+                    <TableCell>Smith & Williamson</TableCell>
+                    <TableCell>156</TableCell>
+                    <TableCell>Team E</TableCell>
+                    <TableCell>ICC 2024</TableCell>
+                  </TableRow>
+                  <TableRow>
+                    <TableCell>Azam & Stokes</TableCell>
+                    <TableCell>143</TableCell>
+                    <TableCell>Team A</TableCell>
+                    <TableCell>T20 Bash</TableCell>
+                  </TableRow>
+                </TableBody>
+              </Table>
+            </TableContainer>
+          </CardContent>
+        </Card>
+      </Grid>
+    </Grid>
+  );
+  
+  // Function to render content based on active tab
+  const renderTabContent = () => {
+    switch (tabValue) {
+      case 0:
+        return renderBattingLeaders();
+      case 1:
+        return renderBowlingLeaders();
+      case 2:
+        return renderAllRounders();
+      case 3:
+        return <PlayerProfiles />;
+      case 4:
+        return renderRecords();
+      default:
+        return renderBattingLeaders();
     }
-    return [];
   };
 
   return (
-    <Container sx={{ py: 4, textAlign: 'center' }}>
-      <Typography variant="h1" color="primary" gutterBottom>
-        Statistics Hub
-      </Typography>
-      <Typography variant="body1" color="textSecondary" sx={{ mb: 3 }}>
-        Comprehensive statistics for players, teams, and records.
-      </Typography>
+    <Container sx={{ py: 4 }}>
+      <Box sx={{ mb: 4, textAlign: 'center' }}>
+        <Typography variant="h4" color="primary" gutterBottom>
+          Player Statistics Hub
+        </Typography>
+        <Typography variant="body1" color="textSecondary" sx={{ mb: 3 }}>
+          Comprehensive statistics and records from all leagues
+        </Typography>
+      </Box>
 
-      {/* Filters */}
-      <Grid container spacing={2} sx={{ mb: 3 }}>
-        <Grid item xs={12} sm={4}>
-          <TextField
-            label="Filter by Tournament"
-            name="tournament"
-            select
-            value={filter.tournament}
-            onChange={handleFilterChange}
-            fullWidth
-          >
-            <MenuItem value="">All Tournaments</MenuItem>
-            <MenuItem value="t1">University Cup</MenuItem>
-            <MenuItem value="t2">Intra-University League</MenuItem>
-          </TextField>
+      {/* Filters and Search */}
+      <Paper sx={{ p: 2, mb: 3 }} elevation={2}>
+        <Typography variant="h6" sx={{ mb: 2, display: 'flex', alignItems: 'center' }}>
+          <FilterListIcon sx={{ mr: 1 }} /> Filters
+        </Typography>
+        <Grid container spacing={2} alignItems="center">
+          <Grid item xs={12} sm={6} md={4}>
+            <TextField
+              fullWidth
+              label="Search Players"
+              variant="outlined"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              size="small"
+              InputProps={{
+                startAdornment: (
+                  <InputAdornment position="start">
+                    <SearchIcon />
+                  </InputAdornment>
+                ),
+              }}
+            />
+          </Grid>
+          <Grid item xs={12} sm={6} md={4}>
+            <FormControl fullWidth size="small">
+              <InputLabel>League</InputLabel>
+              <Select
+                value={league}
+                label="League"
+                onChange={(e) => setLeague(e.target.value)}
+              >
+                <MenuItem value="">All Leagues</MenuItem>
+                {leagues.map((l) => (
+                  <MenuItem key={l.id} value={l.id}>{l.name}</MenuItem>
+                ))}
+              </Select>
+            </FormControl>
+          </Grid>
+          <Grid item xs={12} sm={6} md={4}>
+            <FormControl fullWidth size="small">
+              <InputLabel>Team</InputLabel>
+              <Select
+                value={team}
+                label="Team"
+                onChange={(e) => setTeam(e.target.value)}
+              >
+                <MenuItem value="">All Teams</MenuItem>
+                {teams.map((t) => (
+                  <MenuItem key={t.id} value={t.id}>{t.name}</MenuItem>
+                ))}
+              </Select>
+            </FormControl>
+          </Grid>
         </Grid>
-        <Grid item xs={12} sm={4}>
-          <TextField
-            label="Filter by Team"
-            name="team"
-            select
-            value={filter.team}
-            onChange={handleFilterChange}
-            fullWidth
-          >
-            <MenuItem value="">All Teams</MenuItem>
-            <MenuItem value="team1">Team A</MenuItem>
-            <MenuItem value="team2">Team B</MenuItem>
-          </TextField>
-        </Grid>
-        <Grid item xs={12} sm={4}>
-          <TextField
-            label="Filter by Match Type"
-            name="matchType"
-            select
-            value={filter.matchType}
-            onChange={handleFilterChange}
-            fullWidth
-          >
-            <MenuItem value="">All Match Types</MenuItem>
-            <MenuItem value="T20">T20</MenuItem>
-            <MenuItem value="One Day">One Day</MenuItem>
-          </TextField>
-        </Grid>
-      </Grid>
+      </Paper>
+
+      {/* Export Button */}
+      <Box sx={{ display: 'flex', justifyContent: 'flex-end', mb: 2 }}>
+        <Button 
+          variant="outlined" 
+          startIcon={<DownloadIcon />}
+          sx={{ borderRadius: 28 }}
+        >
+          Export Statistics
+        </Button>
+      </Box>
 
       {/* Tabs */}
-      <Tabs value={tabValue} onChange={handleTabChange} centered sx={{ mb: 3 }}>
-        <Tab label="Batting" />
-        <Tab label="Bowling" />
-        <Tab label="Fielding" />
-        <Tab label="All-Rounders" />
-        <Tab label="Teams" />
-        <Tab label="Records" />
-      </Tabs>
+      <Box sx={{ borderBottom: 1, borderColor: 'divider' }}>
+        <Tabs 
+          value={tabValue} 
+          onChange={handleTabChange} 
+          aria-label="player statistics tabs"
+          variant="scrollable"
+          scrollButtons="auto"
+        >
+          <Tab icon={<SportsIcon />} iconPosition="start" label="Batting Leaders" />
+          <Tab icon={<SportsIcon />} iconPosition="start" label="Bowling Leaders" />
+          <Tab icon={<SportsIcon />} iconPosition="start" label="All-rounders" />
+          <Tab icon={<SportsIcon />} iconPosition="start" label="Player Profiles" />
+          <Tab icon={<EmojiEventsIcon />} iconPosition="start" label="Records" />
+        </Tabs>
+      </Box>
 
-      {loading ? (
-        <Box sx={{ display: 'flex', justifyContent: 'center', my: 4 }}>
-          <CircularProgress />
-        </Box>
-      ) : (
-        <>
-          {/* Leaderboard Table */}
-          <StyledTable>
-            <TableHead>
-              <TableRow>
-                {tabValue === 0 && (
-                  <>
-                    <TableCell>Player</TableCell>
-                    <TableCell>Runs</TableCell>
-                    <TableCell>Average</TableCell>
-                    <TableCell>Centuries</TableCell>
-                  </>
-                )}
-                {tabValue === 1 && (
-                  <>
-                    <TableCell>Player</TableCell>
-                    <TableCell>Wickets</TableCell>
-                    <TableCell>Average</TableCell>
-                    <TableCell>Best</TableCell>
-                  </>
-                )}
-                {tabValue === 2 && (
-                  <>
-                    <TableCell>Player</TableCell>
-                    <TableCell>Catches</TableCell>
-                    <TableCell>Run Outs</TableCell>
-                  </>
-                )}
-                {tabValue === 3 && (
-                  <>
-                    <TableCell>Player</TableCell>
-                    <TableCell>Runs</TableCell>
-                    <TableCell>Wickets</TableCell>
-                  </>
-                )}
-                {tabValue === 4 && (
-                  <>
-                    <TableCell>Team</TableCell>
-                    <TableCell>Wins</TableCell>
-                    <TableCell>Losses</TableCell>
-                    <TableCell>Net Run Rate</TableCell>
-                  </>
-                )}
-                {tabValue === 5 && (
-                  <>
-                    <TableCell>Type</TableCell>
-                    <TableCell>Player</TableCell>
-                    <TableCell>Value</TableCell>
-                    <TableCell>Match</TableCell>
-                  </>
-                )}
-              </TableRow>
-            </TableHead>
-            <TableBody>
-              {tabValue === 0 &&
-                statsData.batting.map((player) => (
-                  <TableRow key={player.id}>
-                    <TableCell>
-                      <Link to={`/player/${player.id}`}>{player.name}</Link>
-                    </TableCell>
-                    <TableCell>{player.stats.runs}</TableCell>
-                    <TableCell>{player.stats.average}</TableCell>
-                    <TableCell>{player.stats.centuries}</TableCell>
-                  </TableRow>
-                ))}
-              {tabValue === 1 &&
-                statsData.bowling.map((player) => (
-                  <TableRow key={player.id}>
-                    <TableCell>
-                      <Link to={`/player/${player.id}`}>{player.name}</Link>
-                    </TableCell>
-                    <TableCell>{player.stats.wickets}</TableCell>
-                    <TableCell>{player.stats.average}</TableCell>
-                    <TableCell>{player.stats.best}</TableCell>
-                  </TableRow>
-                ))}
-              {tabValue === 2 &&
-                statsData.fielding.map((player) => (
-                  <TableRow key={player.id}>
-                    <TableCell>
-                      <Link to={`/player/${player.id}`}>{player.name}</Link>
-                    </TableCell>
-                    <TableCell>{player.stats.catches}</TableCell>
-                    <TableCell>{player.stats.runOuts}</TableCell>
-                  </TableRow>
-                ))}
-              {tabValue === 3 &&
-                statsData.allRounders.map((player) => (
-                  <TableRow key={player.id}>
-                    <TableCell>
-                      <Link to={`/player/${player.id}`}>{player.name}</Link>
-                    </TableCell>
-                    <TableCell>{player.stats.batting.runs}</TableCell>
-                    <TableCell>{player.stats.bowling.wickets}</TableCell>
-                  </TableRow>
-                ))}
-              {tabValue === 4 &&
-                statsData.teams.map((team) => (
-                  <TableRow key={team.id}>
-                    <TableCell>
-                      <Link to={`/team/${team.id}`}>{team.name}</Link>
-                    </TableCell>
-                    <TableCell>{team.stats.wins}</TableCell>
-                    <TableCell>{team.stats.losses}</TableCell>
-                    <TableCell>{team.stats.netRunRate}</TableCell>
-                  </TableRow>
-                ))}
-              {tabValue === 5 &&
-                statsData.records.map((record, index) => (
-                  <TableRow key={index}>
-                    <TableCell>{record.type}</TableCell>
-                    <TableCell>{record.player}</TableCell>
-                    <TableCell>{record.value}</TableCell>
-                    <TableCell>
-                      <Link to={`/scorecard/${record.matchId}`}>View Match</Link>
-                    </TableCell>
-                  </TableRow>
-                ))}
-            </TableBody>
-          </StyledTable>
-
-          {/* Visualizations */}
-          {(tabValue === 0 || tabValue === 1) && (
-            <Box sx={{ mt: 4 }}>
-              <Typography variant="h4" color="primary" gutterBottom>
-                Top Performers
-              </Typography>
-              <ResponsiveContainer width="100%" height={300}>
-                <BarChart data={getGraphData()}>
-                  <XAxis dataKey="name" />
-                  <YAxis />
-                  <Tooltip />
-                  <Bar
-                    dataKey="value"
-                    fill={tabValue === 0 ? '#1b5e20' : '#d32f2f'}
-                  />
-                </BarChart>
-              </ResponsiveContainer>
-            </Box>
-          )}
-
-          {/* Export Buttons */}
-          <Box sx={{ mt: 4, display: 'flex', gap: 2, justifyContent: 'center' }}>
-            <Button
-              variant="contained"
-              onClick={exportToCSV}
-              sx={{ bgcolor: '#1b5e20', '&:hover': { bgcolor: '#4caf50' } }}
-            >
-              Export to CSV
-            </Button>
-            <Button
-              variant="contained"
-              sx={{ bgcolor: '#1b5e20', '&:hover': { bgcolor: '#4caf50' } }}
-              onClick={() => setSnackbar({ open: true, message: 'PDF export not implemented yet.' })}
-            >
-              Export to PDF
-            </Button>
-          </Box>
-
-          {/* Player Profiles Section */}
-          <Box sx={{ mt: 6 }}>
-            <PlayerProfiles />
-          </Box>
-
-          {/* Snackbar for Error Handling */}
-          <Snackbar
-            open={snackbar.open}
-            autoHideDuration={6000}
-            onClose={() => setSnackbar({ ...snackbar, open: false })}
-            message={snackbar.message}
-          />
-        </>
-      )}
+      {/* Tab Content */}
+      <Box sx={{ py: 3 }}>
+        {renderTabContent()}
+      </Box>
     </Container>
   );
 };

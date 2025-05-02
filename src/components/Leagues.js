@@ -164,7 +164,7 @@ const commentaryTemplates = {
   century: ['Century! What an innings!', 'Hundred up, take a bow!'],
 };
 
-const EnhancedLeagueManagement = () => {
+const Leagues = () => {
   const [leagues, setLeagues] = useState([]);
   const [teams, setTeams] = useState([]);
   const [players, setPlayers] = useState([]);
@@ -2956,4 +2956,4 @@ const EnhancedLeagueManagement = () => {
     );
   };
   
-  export default EnhancedLeagueManagement;
+  export default Leagues;

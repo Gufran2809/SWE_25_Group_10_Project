@@ -194,14 +194,23 @@ const Home = () => {
         const playersCollection = collection(db, 'players');
         const playersQuery = query(
           playersCollection,
-          orderBy('runs', 'desc'),
+          orderBy('stats.overall.matches', 'desc'),  // First sort by matches played
           limit(6)
         );
         const playersSnapshot = await getDocs(playersQuery);
-        const playersData = playersSnapshot.docs.map((doc) => ({
-          id: doc.id,
-          ...doc.data(),
-        }));
+        const playersData = playersSnapshot.docs.map((doc) => {
+          const data = doc.data();
+          return {
+            id: doc.id,
+            name: data.name,
+            team: data.team,
+            role: data.role,
+            jerseyNumber: data.jerseyNumber,
+            photo: data.profileImage,
+            stats: data.stats?.overall || {},
+            achievements: data.achievements || []
+          };
+        });
         setPlayerStats(playersData);
 
         // Fetch news
@@ -777,7 +786,7 @@ const Home = () => {
                       {player.name}
                     </Typography>
                     <Typography variant="body2" color="text.secondary">
-                      {player.team}
+                      {player.team} • {player.role}
                     </Typography>
                   </Box>
                 </Box>
@@ -790,37 +799,88 @@ const Home = () => {
                       Matches
                     </Typography>
                     <Typography variant="h6" color="text.primary">
-                      {player.matches}
+                      {player.stats.matches || 0}
                     </Typography>
                   </Grid>
                   
-                  <Grid item xs={6}>
-                    <Typography variant="body2" color="text.secondary">
-                      Runs
-                    </Typography>
-                    <Typography variant="h6" color="text.primary">
-                      {player.runs}
-                    </Typography>
-                  </Grid>
-                  
-                  <Grid item xs={6}>
-                    <Typography variant="body2" color="text.secondary">
-                      Average
-                    </Typography>
-                    <Typography variant="h6" color="text.primary">
-                      {player.average}
-                    </Typography>
-                  </Grid>
-                  
-                  <Grid item xs={6}>
-                    <Typography variant="body2" color="text.secondary">
-                      Strike Rate
-                    </Typography>
-                    <Typography variant="h6" color="text.primary">
-                      {player.strikeRate}
-                    </Typography>
-                  </Grid>
+                  {player.stats.batting && (
+                    <>
+                      <Grid item xs={6}>
+                        <Typography variant="body2" color="text.secondary">
+                          Runs
+                        </Typography>
+                        <Typography variant="h6" color="text.primary">
+                          {player.stats.batting.runs || 0}
+                        </Typography>
+                      </Grid>
+                      
+                      <Grid item xs={6}>
+                        <Typography variant="body2" color="text.secondary">
+                          Average
+                        </Typography>
+                        <Typography variant="h6" color="text.primary">
+                          {player.stats.batting.average?.toFixed(2) || 0}
+                        </Typography>
+                      </Grid>
+                      
+                      <Grid item xs={6}>
+                        <Typography variant="body2" color="text.secondary">
+                          Strike Rate
+                        </Typography>
+                        <Typography variant="h6" color="text.primary">
+                          {player.stats.batting.strikeRate?.toFixed(1) || 0}
+                        </Typography>
+                      </Grid>
+                    </>
+                  )}
+
+                  {player.stats.bowling && (
+                    <>
+                      <Grid item xs={6}>
+                        <Typography variant="body2" color="text.secondary">
+                          Wickets
+                        </Typography>
+                        <Typography variant="h6" color="text.primary">
+                          {player.stats.bowling.wickets || 0}
+                        </Typography>
+                      </Grid>
+                      
+                      <Grid item xs={6}>
+                        <Typography variant="body2" color="text.secondary">
+                          Economy
+                        </Typography>
+                        <Typography variant="h6" color="text.primary">
+                          {player.stats.bowling.economy?.toFixed(2) || 0}
+                        </Typography>
+                      </Grid>
+                    </>
+                  )}
+
+                  {player.stats.keeping && (
+                    <Grid item xs={6}>
+                      <Typography variant="body2" color="text.secondary">
+                        Dismissals
+                      </Typography>
+                      <Typography variant="h6" color="text.primary">
+                        {player.stats.keeping.totalDismissals || 0}
+                      </Typography>
+                    </Grid>
+                  )}
                 </Grid>
+
+                {player.achievements && player.achievements.length > 0 && (
+                  <Box sx={{ mt: 2 }}>
+                    <Typography variant="body2" color="text.secondary" gutterBottom>
+                      Recent Achievement
+                    </Typography>
+                    <Chip 
+                      label={player.achievements[0]}
+                      size="small"
+                      color="primary"
+                      sx={{ borderRadius: '12px' }}
+                    />
+                  </Box>
+                )}
                 
                 <Button
                   component={Link}

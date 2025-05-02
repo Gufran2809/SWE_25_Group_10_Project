@@ -66,7 +66,7 @@ const LoginPage = () => {
   const { login } = useContext(AuthContext);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const [role, setRole] = useState('Fan');
+  const [role, setRole] = useState('Player');
   const [isSignup, setIsSignup] = useState(false);
   const [snackbar, setSnackbar] = useState({ open: false, message: '', severity: 'error' });
   const navigate = useNavigate();
@@ -187,9 +187,7 @@ const LoginPage = () => {
                     },
                   }}
                 >
-                  <MenuItem value="Fan">Fan</MenuItem>
                   <MenuItem value="Player">Player</MenuItem>
-                  <MenuItem value="Umpire">Umpire</MenuItem>
                   <MenuItem value="Organizer">Organizer</MenuItem>
                 </Select>
               </FormControl>

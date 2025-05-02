@@ -140,41 +140,62 @@ const Home = () => {
       try {
         setLoading(true);
 
-        // Fetch matches
+        // Fetch matches with the new structure
         const matchesCollection = collection(db, 'matches');
         const matchesQuery = query(
-          matchesCollection, 
-          orderBy('matchDate', 'desc'), 
+          matchesCollection,
+          orderBy('date', 'desc'),
           limit(10)
         );
         const matchesSnapshot = await getDocs(matchesQuery);
         const matchesData = matchesSnapshot.docs.map((doc) => {
           const data = doc.data();
+          const team1Score = data.score?.team1 || { runs: 0, wickets: 0, overs: "0.0" };
+          const team2Score = data.score?.team2 || { runs: 0, wickets: 0, overs: "0.0" };
+          
           return {
             id: doc.id,
-            team1: data.team1 || 'Team 1',
-            team2: data.team2 || 'Team 2',
-            team1Logo: data.team1Logo || '/default-logo.png',
-            team2Logo: data.team2Logo || '/default-logo.png',
-            score: typeof data.score === 'string'
-              ? data.score
-              : (data.score && typeof data.score === 'object')
-                ? `${data.score.team1?.runs || 0}/${data.score.team1?.wickets || 0} (${data.score.team1?.overs || 0} ov),${data.score.team2?.runs || 0}/${data.score.team2?.wickets || 0} (${data.score.team2?.overs || 0} ov)`
-                : 'Yet to bat,Yet to bat',
+            title: data.title || '',
+            team1Id: data.team1Id,
+            team2Id: data.team2Id,
+            team1Score: `${team1Score.runs}/${team1Score.wickets} (${team1Score.overs})`,
+            team2Score: `${team2Score.runs}/${team2Score.wickets} (${team2Score.overs})`,
             status: data.status || 'Upcoming',
-            matchDate: data.matchDate?.toDate ? data.matchDate.toDate() : (data.matchDate || new Date()),
+            matchDate: data.date?.toDate() || new Date(),
             venue: data.venue || 'TBD',
-            tournamentName: data.tournamentName || '',
-            result: data.result || '',
-            // ...add other fields as needed
+            matchType: data.matchType || '',
+            overs: data.overs || 20,
+            battingTeam: data.battingTeam,
+            currentOver: data.currentOver,
+            currentBall: data.currentBall,
+            leagueId: data.leagueId
           };
         });
-        setMatches(matchesData);
 
-        // Set featured match (first live match, or first upcoming match)
-        const liveMatches = matchesData.filter(m => m.status === 'Live');
-        const upcomingMatches = matchesData.filter(m => m.status === 'Upcoming');
-        setFeaturedMatch(liveMatches[0] || upcomingMatches[0] || matchesData[0]);
+        // Fetch team details for the matches
+        const teamPromises = matchesData.map(async (match) => {
+          const team1Doc = await getDocs(query(collection(db, 'teams'), where('id', '==', match.team1Id)));
+          const team2Doc = await getDocs(query(collection(db, 'teams'), where('id', '==', match.team2Id)));
+          
+          const team1Data = team1Doc.docs[0]?.data() || { name: 'Team 1', logo: '/default-logo.png' };
+          const team2Data = team2Doc.docs[0]?.data() || { name: 'Team 2', logo: '/default-logo.png' };
+          
+          return {
+            ...match,
+            team1: team1Data.name,
+            team2: team2Data.name,
+            team1Logo: team1Data.logo,
+            team2Logo: team2Data.logo
+          };
+        });
+
+        const matchesWithTeams = await Promise.all(teamPromises);
+        setMatches(matchesWithTeams);
+
+        // Set featured match
+        const liveMatches = matchesWithTeams.filter(m => m.status === 'Live');
+        const upcomingMatches = matchesWithTeams.filter(m => m.status === 'Upcoming');
+        setFeaturedMatch(liveMatches[0] || upcomingMatches[0] || matchesWithTeams[0]);
 
         // Fetch tournaments
         const tournamentsCollection = collection(db, 'tournaments');
@@ -228,7 +249,6 @@ const Home = () => {
         setNews(newsData);
       } catch (error) {
         console.error('Error fetching data:', error);
-        // Optionally, show a message to the user
         setFeaturedMatch(null);
         setMatches([]);
         setTournaments([]);
@@ -302,7 +322,7 @@ const Home = () => {
               gutterBottom
               sx={{ fontWeight: 'bold', mb: 3 }}
             >
-              {featuredMatch.status === 'Live' ? 'LIVE NOW' : 'FEATURED MATCH'}
+              UPCOMING BLOCKBUSTER
             </Typography>
 
             <Grid container spacing={2} alignItems="center" justifyContent="center">
@@ -315,35 +335,15 @@ const Home = () => {
                 <Typography variant="h5" sx={{ fontWeight: 'bold' }}>
                   {featuredMatch.team1}
                 </Typography>
-                {featuredMatch.status === 'Live' && (
-                  <ScoreText variant="body1">
-                    {typeof featuredMatch.score === 'string' ? featuredMatch.score.split(',')[0] : 'Yet to bat'}
-                  </ScoreText>
-                )}
+                <Typography variant="body2" color="inherit">
+                  Looking for a win
+                </Typography>
               </Grid>
 
               <Grid item xs={4} md={4} sx={{ textAlign: 'center' }}>
-                {featuredMatch.status === 'Live' ? (
-                  <LiveIndicator>
-                    <FiberManualRecordIcon fontSize="small" sx={{ mr: 0.5 }} />
-                    <Typography variant="subtitle1">LIVE</Typography>
-                  </LiveIndicator>
-                ) : featuredMatch.status === 'Upcoming' ? (
-                  <CountdownTimer>
-                    <AccessTimeIcon fontSize="small" />
-                    <Typography variant="subtitle1">
-                      {getCountdown(featuredMatch.matchDate)}
-                    </Typography>
-                  </CountdownTimer>
-                ) : (
-                  <Chip 
-                    label="COMPLETED" 
-                    color="success" 
-                    variant="outlined"
-                    sx={{ fontWeight: 'bold' }}
-                  />
-                )}
-
+                <Typography variant="h6" sx={{ mb: 1 }}>
+                  VS
+                </Typography>
                 <Typography variant="body2" sx={{ my: 1 }}>
                   {new Date(featuredMatch.matchDate).toLocaleDateString('en-US', { 
                     weekday: 'short', 
@@ -351,12 +351,10 @@ const Home = () => {
                     day: 'numeric' 
                   })}
                 </Typography>
-
-                <Typography variant="body2" color="text.secondary">
+                <Typography variant="body2" sx={{ mb: 1 }}>
                   {featuredMatch.venue}
                 </Typography>
-
-                <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
+                <Typography variant="caption" sx={{ display: 'block', mt: 1 }}>
                   {featuredMatch.tournamentName}
                 </Typography>
               </Grid>
@@ -370,39 +368,25 @@ const Home = () => {
                 <Typography variant="h5" sx={{ fontWeight: 'bold' }}>
                   {featuredMatch.team2}
                 </Typography>
-                {featuredMatch.status === 'Live' && (
-                  <ScoreText variant="body1">
-                    {typeof featuredMatch.score === 'string' ? featuredMatch.score.split(',')[1] : 'Yet to bat'}
-                  </ScoreText>
-                )}
+                <Typography variant="body2" color="inherit">
+                  Ready for battle
+                </Typography>
               </Grid>
             </Grid>
 
             <Box sx={{ mt: 3, display: 'flex', justifyContent: 'center', gap: 2 }}>
-              {featuredMatch.status === 'Live' && (
-                <ActionButton
-                  component={Link}
-                  to={`/matches/${featuredMatch.id}/live`}
-                  startIcon={<PlayArrowIcon />}
-                >
-                  Watch Live
-                </ActionButton>
-              )}
-
               <Button
                 component={Link}
                 to={`/matches/${featuredMatch.id}`}
-                variant="outlined"
-                color="inherit"
-                startIcon={<ScoreboardIcon />}
+                variant="contained"
                 sx={{ 
-                  borderRadius: '24px', 
-                  borderColor: 'white', 
-                  color: 'white',
-                  '&:hover': { borderColor: 'white', backgroundColor: 'rgba(255,255,255,0.1)' } 
+                  borderRadius: '24px',
+                  bgcolor: 'white',
+                  color: '#1b5e20',
+                  '&:hover': { bgcolor: 'rgba(255,255,255,0.9)' }
                 }}
               >
-                {featuredMatch.status === 'Upcoming' ? 'Match Details' : 'View Scorecard'}
+                Match Details
               </Button>
             </Box>
           </Box>
@@ -483,7 +467,7 @@ const Home = () => {
                               </Typography>
                             </Box>
                             <ScoreText variant="body2">
-                              {typeof match.score === 'string' ? match.score.split(',')[0]?.trim() : ''}
+                              {match.team1Score}
                             </ScoreText>
                           </Box>
                           
@@ -495,7 +479,7 @@ const Home = () => {
                               </Typography>
                             </Box>
                             <ScoreText variant="body2">
-                              {typeof match.score === 'string' && match.score.split(',')[1] ? match.score.split(',')[1].trim() : ''}
+                              {match.team2Score}
                             </ScoreText>
                           </Box>
                           
@@ -881,17 +865,6 @@ const Home = () => {
                     />
                   </Box>
                 )}
-                
-                <Button
-                  component={Link}
-                  to={`/players/${player.id}`}
-                  variant="outlined"
-                  size="small"
-                  fullWidth
-                  sx={{ borderRadius: '20px', textTransform: 'none', mt: 2 }}
-                >
-                  View Profile
-                </Button>
               </CardContent>
             </StyledCard>
           </Grid>

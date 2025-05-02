@@ -17,9 +17,9 @@ import MatchPreview from './components/MatchPreview';
 
 function App() {
   return (
-    <AuthProvider>
-      <CssBaseline />
-      <Router>
+    <Router>
+      <AuthProvider>
+        <CssBaseline />
         <Routes>
           <Route path="/login" element={<LoginPage />} />
           
@@ -78,8 +78,8 @@ function App() {
             </>
           } />
         </Routes>
-      </Router>
-    </AuthProvider>
+      </AuthProvider>
+    </Router>
   );
 }
 

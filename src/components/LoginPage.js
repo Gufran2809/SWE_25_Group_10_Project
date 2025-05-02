@@ -7,7 +7,7 @@ import {
   signInWithEmailAndPassword,
   sendEmailVerification,
 } from 'firebase/auth';
-import { doc, setDoc, getDoc } from 'firebase/firestore';
+import { doc, setDoc, getDoc, updateDoc } from 'firebase/firestore';
 import {
   Box,
   Container,
@@ -78,11 +78,57 @@ const LoginPage = () => {
       if (isSignup) {
         const userCredential = await createUserWithEmailAndPassword(auth, email, password);
         const newUser = userCredential.user;
+        
+        // Create user document
         await setDoc(doc(db, 'users', newUser.uid), {
           email: newUser.email,
           role: role,
           createdAt: new Date(),
+          displayName: newUser.displayName || email.split('@')[0],
+          photoURL: newUser.photoURL || '',
         });
+
+        // If role is Player, create player document
+        if (role === 'Player') {
+          const playerId = `p-${Date.now()}`;
+          await setDoc(doc(db, 'players', playerId), {
+            id: playerId,
+            userId: newUser.uid,
+            name: newUser.displayName || email.split('@')[0],
+            role: 'batsman', // default role
+            isCaptain: false,
+            isWicketKeeper: false,
+            isOut: false,
+            jerseyNumber: null,
+            profileImage: newUser.photoURL || '',
+            achievements: [],
+            stats: {
+              ballsFaced: 0,
+              isOut: false,
+              overall: {
+                batting: {
+                  average: 0,
+                  fifties: 0,
+                  fours: 0,
+                  highest: 0,
+                  hundreds: 0,
+                  innings: 0,
+                  lastFiveScores: [],
+                  notOuts: 0,
+                  runs: 0,
+                  sixes: 0,
+                  strikeRate: 0
+                },
+                matches: 0
+              },
+              runs: 0,
+              strikeRate: "0"
+            },
+            team: "",
+            teamId: ""
+          });
+        }
+
         await sendEmailVerification(newUser);
         setSnackbar({
           open: true,
@@ -93,7 +139,7 @@ const LoginPage = () => {
       } else {
         await signInWithEmailAndPassword(auth, email, password);
         const userDoc = await getDoc(doc(db, 'users', auth.currentUser.uid));
-        const userRole = userDoc.exists() ? userDoc.data().role : 'Fan';
+        const userRole = userDoc.exists() ? userDoc.data().role : 'Organizer'; // Default to Organizer
         navigate(userRole === 'Organizer' ? '/organizer' : '/', { replace: true });
       }
     } catch (error) {
@@ -107,15 +153,18 @@ const LoginPage = () => {
 
   const handleGoogleLogin = async () => {
     try {
-      await login();
-      const userDoc = await getDoc(doc(db, 'users', auth.currentUser.uid));
-      const userRole = userDoc.exists() ? userDoc.data().role : 'Fan';
-      navigate(userRole === 'Organizer' ? '/organizer' : '/', { replace: true });
+      const result = await login();
+      const userDoc = await getDoc(doc(db, 'users', result.user.uid));
+      
+      if (userDoc.exists()) {
+        navigate('/organizer', { replace: true });
+      }
     } catch (error) {
+      console.error('Login error:', error);
       setSnackbar({
         open: true,
-        message: error.message || 'Google login failed. Please try again.',
-        severity: 'error',
+        message: error.message || 'Failed to login. Please try again.',
+        severity: 'error'
       });
     }
   };

@@ -1,35 +1,37 @@
 import React, { useState, useEffect } from 'react';
 import { useParams } from 'react-router-dom';
-import { doc, getDoc } from 'firebase/firestore';
+import { doc, getDoc, collection, query, where, getDocs } from 'firebase/firestore';
 import { db } from '../firebase';
 import {
-  Container,
-  Paper,
-  Typography,
-  Box,
-  Grid,
-  Avatar,
-  Divider,
-  List,
-  ListItem,
-  ListItemText,
-  ListItemAvatar
+  Container, Paper, Typography, Box, Grid, Avatar,
+  Card, List, ListItem, ListItemText, ListItemAvatar,
+  Divider, Chip, Table, TableBody, TableCell,
+  TableHead, TableRow, LinearProgress
 } from '@mui/material';
-import CalendarTodayIcon from '@mui/icons-material/CalendarToday';
-import LocationOnIcon from '@mui/icons-material/LocationOn';
-import GroupsIcon from '@mui/icons-material/Groups';
+import {
+  CalendarToday as DateIcon,
+  LocationOn as VenueIcon,
+  Groups as TeamIcon,
+  EmojiEvents as TrophyIcon,
+  Timeline as StatsIcon
+} from '@mui/icons-material';
 
 const MatchPreview = () => {
   const { matchId } = useParams();
   const [match, setMatch] = useState(null);
+  const [headToHead, setHeadToHead] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [playerStats, setPlayerStats] = useState({ team1: [], team2: [] });
 
   useEffect(() => {
-    const fetchMatch = async () => {
+    const fetchMatchData = async () => {
       try {
         const matchDoc = await getDoc(doc(db, 'matches', matchId));
         if (matchDoc.exists()) {
-          setMatch({ id: matchDoc.id, ...matchDoc.data() });
+          const matchData = { id: matchDoc.id, ...matchDoc.data() };
+          setMatch(matchData);
+          await fetchHeadToHead(matchData.team1, matchData.team2);
+          await fetchPlayerStats(matchData.team1Id, matchData.team2Id);
         }
       } catch (error) {
         console.error('Error fetching match:', error);
@@ -38,114 +40,240 @@ const MatchPreview = () => {
       }
     };
 
-    fetchMatch();
+    fetchMatchData();
   }, [matchId]);
 
-  if (loading) return null;
-  if (!match) return <Typography>Match not found</Typography>;
+  const fetchHeadToHead = async (team1, team2) => {
+    const q = query(
+      collection(db, 'matches'),
+      where('teams', 'array-contains-any', [team1, team2]),
+      where('status', '==', 'Completed')
+    );
+
+    const querySnapshot = await getDocs(q);
+    const matches = querySnapshot.docs.map(doc => doc.data());
+    
+    const stats = {
+      total: matches.length,
+      wins: {
+        [team1]: 0,
+        [team2]: 0
+      },
+      recent: matches.slice(0, 5)
+    };
+
+    matches.forEach(match => {
+      if (match.winner === team1) stats.wins[team1]++;
+      if (match.winner === team2) stats.wins[team2]++;
+    });
+
+    setHeadToHead(stats);
+  };
+
+  const fetchPlayerStats = async (team1Id, team2Id) => {
+    // Fetch top performers from both teams
+    const fetchTeamStats = async (teamId) => {
+      const q = query(
+        collection(db, 'playerStats'),
+        where('teamId', '==', teamId),
+        where('status', '==', 'Active')
+      );
+      
+      const querySnapshot = await getDocs(q);
+      return querySnapshot.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data()
+      }));
+    };
+
+    const [team1Stats, team2Stats] = await Promise.all([
+      fetchTeamStats(team1Id),
+      fetchTeamStats(team2Id)
+    ]);
+
+    setPlayerStats({
+      team1: team1Stats,
+      team2: team2Stats
+    });
+  };
+
+  if (loading || !match) {
+    return (
+      <Container maxWidth="lg" sx={{ py: 4 }}>
+        <LinearProgress />
+      </Container>
+    );
+  }
 
   return (
     <Container maxWidth="lg" sx={{ py: 4 }}>
-      <Paper elevation={3} sx={{ p: 3, borderRadius: '12px' }}>
-        <Typography variant="h4" align="center" gutterBottom>
-          Match Preview
-        </Typography>
-
-        {/* Teams */}
-        <Grid container spacing={3} sx={{ mb: 4 }}>
+      {/* Match Header */}
+      <Paper 
+        elevation={3} 
+        sx={{ 
+          p: 3, 
+          mb: 3, 
+          borderRadius: '12px',
+          background: 'linear-gradient(135deg, #1a237e 0%, #0d47a1 100%)',
+          color: 'white'
+        }}
+      >
+        <Grid container spacing={4}>
           <Grid item xs={5} sx={{ textAlign: 'center' }}>
-            <Avatar
-              src={match.team1Logo}
+            <Avatar 
+              src={match?.team1Logo || ''} 
               sx={{ width: 120, height: 120, mx: 'auto', mb: 2 }}
             />
-            <Typography variant="h5">{match.team1}</Typography>
+            <Typography variant="h4" gutterBottom>
+              {match?.team1 || 'Team 1'}
+            </Typography>
           </Grid>
+
           <Grid item xs={2} sx={{ 
             display: 'flex', 
+            flexDirection: 'column',
             alignItems: 'center', 
             justifyContent: 'center'
           }}>
-            <Typography variant="h4">VS</Typography>
+            <Typography variant="h3" sx={{ mb: 2 }}>VS</Typography>
+            <Chip 
+              label={match?.status || 'UPCOMING'}
+              color="primary"
+              sx={{ bgcolor: 'rgba(255, 255, 255, 0.2)' }}
+            />
           </Grid>
+
           <Grid item xs={5} sx={{ textAlign: 'center' }}>
-            <Avatar
-              src={match.team2Logo}
+            <Avatar 
+              src={match?.team2Logo || ''} 
               sx={{ width: 120, height: 120, mx: 'auto', mb: 2 }}
             />
-            <Typography variant="h5">{match.team2}</Typography>
+            <Typography variant="h4" gutterBottom>
+              {match?.team2 || 'Team 2'}
+            </Typography>
           </Grid>
         </Grid>
-
-        {/* Match Details */}
-        <List>
-          <ListItem>
-            <ListItemAvatar>
-              <Avatar>
-                <CalendarTodayIcon />
-              </Avatar>
-            </ListItemAvatar>
-            <ListItemText
-              primary="Match Date & Time"
-              secondary={new Date(match.matchDate).toLocaleString()}
-            />
-          </ListItem>
-          <ListItem>
-            <ListItemAvatar>
-              <Avatar>
-                <LocationOnIcon />
-              </Avatar>
-            </ListItemAvatar>
-            <ListItemText
-              primary="Venue"
-              secondary={match.venue}
-            />
-          </ListItem>
-          <ListItem>
-            <ListItemAvatar>
-              <Avatar>
-                <GroupsIcon />
-              </Avatar>
-            </ListItemAvatar>
-            <ListItemText
-              primary="Tournament"
-              secondary={match.tournamentName}
-            />
-          </ListItem>
-        </List>
-
-        {/* Team Squads */}
-        <Box sx={{ mt: 4 }}>
-          <Typography variant="h6" gutterBottom>
-            Probable Playing XI
-          </Typography>
-          <Grid container spacing={3}>
-            <Grid item xs={12} md={6}>
-              <Typography variant="subtitle1" gutterBottom>
-                {match.team1}
-              </Typography>
-              <List>
-                {match.team1Squad?.map((player, index) => (
-                  <ListItem key={index}>
-                    <ListItemText primary={player.name} />
-                  </ListItem>
-                ))}
-              </List>
-            </Grid>
-            <Grid item xs={12} md={6}>
-              <Typography variant="subtitle1" gutterBottom>
-                {match.team2}
-              </Typography>
-              <List>
-                {match.team2Squad?.map((player, index) => (
-                  <ListItem key={index}>
-                    <ListItemText primary={player.name} />
-                  </ListItem>
-                ))}
-              </List>
-            </Grid>
-          </Grid>
-        </Box>
       </Paper>
+
+      {/* Match Details */}
+      <Grid container spacing={3}>
+        <Grid item xs={12} md={6}>
+          <Card sx={{ p: 2, height: '100%' }}>
+            <Typography variant="h6" gutterBottom>
+              Match Details
+            </Typography>
+            <List>
+              <ListItem>
+                <ListItemAvatar>
+                  <Avatar>
+                    <DateIcon />
+                  </Avatar>
+                </ListItemAvatar>
+                <ListItemText
+                  primary="Date & Time"
+                  secondary={match?.matchDate ? new Date(match.matchDate).toLocaleString() : 'TBD'}
+                />
+              </ListItem>
+              <ListItem>
+                <ListItemAvatar>
+                  <Avatar>
+                    <VenueIcon />
+                  </Avatar>
+                </ListItemAvatar>
+                <ListItemText
+                  primary="Venue"
+                  secondary={match?.venue || 'TBD'}
+                />
+              </ListItem>
+              <ListItem>
+                <ListItemAvatar>
+                  <Avatar>
+                    <TrophyIcon />
+                  </Avatar>
+                </ListItemAvatar>
+                <ListItemText
+                  primary="Tournament"
+                  secondary={match?.tournamentName || 'TBD'}
+                />
+              </ListItem>
+            </List>
+          </Card>
+        </Grid>
+
+        <Grid item xs={12} md={6}>
+          <Card sx={{ p: 2, height: '100%' }}>
+            <Typography variant="h6" gutterBottom>
+              Head to Head
+            </Typography>
+            {headToHead && (
+              <>
+                <Box sx={{ textAlign: 'center', mb: 2 }}>
+                  <Typography variant="h4">
+                    {headToHead.wins[match.team1]} - {headToHead.wins[match.team2]}
+                  </Typography>
+                  <Typography variant="subtitle2" color="text.secondary">
+                    Total Matches: {headToHead.total}
+                  </Typography>
+                </Box>
+                <Typography variant="subtitle1" gutterBottom>
+                  Recent Encounters
+                </Typography>
+                <List dense>
+                  {headToHead.recent.map((game, index) => (
+                    <ListItem key={index}>
+                      <ListItemText
+                        primary={`${game.team1} vs ${game.team2}`}
+                        secondary={`Winner: ${game.winner}`}
+                      />
+                    </ListItem>
+                  ))}
+                </List>
+              </>
+            )}
+          </Card>
+        </Grid>
+
+        {/* Player Stats */}
+        <Grid item xs={12}>
+          <Card sx={{ p: 2 }}>
+            <Typography variant="h6" gutterBottom>
+              Key Players
+            </Typography>
+            <Grid container spacing={3}>
+              {[
+                { team: match.team1, stats: playerStats.team1 },
+                { team: match.team2, stats: playerStats.team2 }
+              ].map((teamData, index) => (
+                <Grid item xs={12} md={6} key={index}>
+                  <Typography variant="subtitle1" gutterBottom>
+                    {teamData.team}
+                  </Typography>
+                  <Table size="small">
+                    <TableHead>
+                      <TableRow>
+                        <TableCell>Player</TableCell>
+                        <TableCell align="right">Matches</TableCell>
+                        <TableCell align="right">Runs</TableCell>
+                        <TableCell align="right">Wickets</TableCell>
+                      </TableRow>
+                    </TableHead>
+                    <TableBody>
+                      {teamData.stats.map((player, idx) => (
+                        <TableRow key={idx}>
+                          <TableCell>{player.name}</TableCell>
+                          <TableCell align="right">{player.matches}</TableCell>
+                          <TableCell align="right">{player.runs}</TableCell>
+                          <TableCell align="right">{player.wickets}</TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </Grid>
+              ))}
+            </Grid>
+          </Card>
+        </Grid>
+      </Grid>
     </Container>
   );
 };

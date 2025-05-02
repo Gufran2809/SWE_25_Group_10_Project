@@ -161,9 +161,6 @@ const Navbar = () => {
                   <MenuItem component={Link} to="/profile" onClick={handleProfileMenuClose}>
                     Profile
                   </MenuItem>
-                  <MenuItem component={Link} to="/dashboard" onClick={handleProfileMenuClose}>
-                    Dashboard
-                  </MenuItem>
                   <Divider />
                   <MenuItem onClick={handleLogout}>Logout</MenuItem>
                 </Menu>
@@ -212,9 +209,17 @@ const Navbar = () => {
             ))}
             <Divider />
             {user ? (
-              <ListItem button onClick={logout}>
-                <ListItemText primary="Logout" />
-              </ListItem>
+              <>
+                <ListItem button component={Link} to="/profile">
+                  <ListItemIcon>
+                    <AccountCircleIcon />
+                  </ListItemIcon>
+                  <ListItemText primary="Profile" />
+                </ListItem>
+                <ListItem button onClick={handleLogout}>
+                  <ListItemText primary="Logout" />
+                </ListItem>
+              </>
             ) : (
               <ListItem button component={Link} to="/login">
                 <ListItemText primary="Login" />

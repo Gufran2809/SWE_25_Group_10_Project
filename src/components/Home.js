@@ -14,6 +14,7 @@ import {
   Divider,
   Avatar,
   Paper,
+  Stack,
 } from '@mui/material';
 import { Link } from 'react-router-dom';
 import { db } from '../firebase';
@@ -26,6 +27,7 @@ import PlayArrowIcon from '@mui/icons-material/PlayArrow';
 import ScoreboardIcon from '@mui/icons-material/Scoreboard';
 import AccessTimeIcon from '@mui/icons-material/AccessTime';
 import FiberManualRecordIcon from '@mui/icons-material/FiberManualRecord';
+import { motion, AnimatePresence } from 'framer-motion';
 
 // Styled components
 const HeroBox = styled(Box)(({ theme }) => ({
@@ -39,6 +41,27 @@ const HeroBox = styled(Box)(({ theme }) => ({
   [theme.breakpoints.down('sm')]: {
     padding: theme.spacing(4, 2),
   },
+}));
+
+const PromotionalBanner = styled(Box)(({ theme }) => ({
+  background: 'linear-gradient(135deg, #1b5e20 0%, #43a047 100%)',
+  padding: theme.spacing(6, 2),
+  color: '#ffffff',
+  borderRadius: '12px',
+  marginBottom: theme.spacing(4),
+  position: 'relative',
+  overflow: 'hidden',
+  '&::before': {
+    content: '""',
+    position: 'absolute',
+    top: 0,
+    right: 0,
+    bottom: 0,
+    width: '40%',
+    background: 'url(/cricket-illustration.png) no-repeat center right',
+    backgroundSize: 'contain',
+    opacity: 0.2,
+  }
 }));
 
 const StyledCard = styled(Card)(({ theme }) => ({
@@ -125,6 +148,73 @@ const CountdownTimer = styled(Box)(({ theme }) => ({
   color: theme.palette.primary.main,
 }));
 
+const AnimatedStatBox = styled(motion.div)(({ theme }) => ({
+  background: 'rgba(255, 255, 255, 0.1)',
+  backdropFilter: 'blur(10px)',
+  padding: theme.spacing(3),
+  borderRadius: '16px',
+  border: '1px solid rgba(255, 255, 255, 0.2)',
+  color: 'white',
+  textAlign: 'center',
+  cursor: 'pointer',
+  transition: 'background 0.3s ease',
+  '&:hover': {
+    background: 'rgba(255, 255, 255, 0.15)',
+  }
+}));
+
+const StatNumber = styled(Typography)(({ theme }) => ({
+  fontSize: '2.5rem',
+  fontWeight: 900,
+  marginBottom: theme.spacing(1),
+  background: 'linear-gradient(45deg, #fff, #e0e0e0)',
+  WebkitBackgroundClip: 'text',
+  WebkitTextFillColor: 'transparent',
+}));
+
+const CountdownBox = styled(Box)(({ theme }) => ({
+  background: 'rgba(255, 255, 255, 0.1)',
+  backdropFilter: 'blur(10px)',
+  borderRadius: '16px',
+  padding: theme.spacing(3),
+  border: '1px solid rgba(255, 255, 255, 0.2)',
+  textAlign: 'center'
+}));
+
+const CountdownNumber = styled(Typography)(({ theme }) => ({
+  fontSize: '3rem',
+  fontWeight: 900,
+  color: '#fff',
+  textShadow: '0 0 20px rgba(255,255,255,0.3)',
+  marginBottom: theme.spacing(1)
+}));
+
+const StatGrid = styled(Grid)(({ theme }) => ({
+  background: 'rgba(255, 255, 255, 0.05)',
+  borderRadius: '16px',
+  padding: theme.spacing(3),
+  border: '1px solid rgba(255, 255, 255, 0.1)',
+  height: '100%'
+}));
+
+const MotionValue = ({ value, duration = 2 }) => {
+  return (
+    <motion.span
+      initial={{ opacity: 0, count: 0 }}
+      animate={{ 
+        opacity: 1,
+        count: value,
+      }}
+      transition={{ 
+        duration: duration,
+        ease: "easeOut"
+      }}
+    >
+      {Math.round(value)}
+    </motion.span>
+  );
+};
+
 const Home = () => {
   const { user } = useContext(AuthContext);
   const [matches, setMatches] = useState([]);
@@ -134,21 +224,55 @@ const Home = () => {
   const [loading, setLoading] = useState(true);
   const [tabValue, setTabValue] = useState(0);
   const [featuredMatch, setFeaturedMatch] = useState(null);
+  const [totalStats, setTotalStats] = useState({
+    matchesPlayed: 0,
+    totalPlayers: 0,
+    activeTournaments: 0,
+    liveMatches: 0
+  });
 
   useEffect(() => {
     const fetchData = async () => {
       try {
         setLoading(true);
 
-        // Fetch matches with the new structure
+        // Fetch total matches played
         const matchesCollection = collection(db, 'matches');
-        const matchesQuery = query(
+        const matchesQuery = query(matchesCollection, where('status', '==', 'Completed'));
+        const matchesSnapshot = await getDocs(matchesQuery);
+        const totalMatches = matchesSnapshot.docs.length;
+
+        // Fetch all players without status filter
+        const playersCollection = collection(db, 'players');
+        const playersSnapshot = await getDocs(playersCollection);
+        const totalPlayers = playersSnapshot.docs.length;
+
+        // Fetch active tournaments
+        const tournamentsCollection = collection(db, 'leagues');
+        const tournamentsQuery = query(tournamentsCollection, where('status', '==', 'active'));
+        const tournamentsSnapshot = await getDocs(tournamentsQuery);
+        const activeTournaments = tournamentsSnapshot.docs.length;
+
+        // Fetch live matches
+        const liveMatchesQuery = query(matchesCollection, where('status', '==', 'Live'));
+        const liveMatchesSnapshot = await getDocs(liveMatchesQuery);
+        const liveMatchesCount = liveMatchesSnapshot.docs.length;
+
+        setTotalStats({
+          matchesPlayed: totalMatches,
+          totalPlayers: totalPlayers, // This now shows total players in database
+          activeTournaments: activeTournaments,
+          liveMatches: liveMatchesCount
+        });
+
+        // Fetch matches with the new structure
+        const matchesQueryWithLimit = query(
           matchesCollection,
           orderBy('date', 'desc'),
           limit(10)
         );
-        const matchesSnapshot = await getDocs(matchesQuery);
-        const matchesData = matchesSnapshot.docs.map((doc) => {
+        const matchesSnapshotWithLimit = await getDocs(matchesQueryWithLimit);
+        const matchesData = matchesSnapshotWithLimit.docs.map((doc) => {
           const data = doc.data();
           const team1Score = data.score?.team1 || { runs: 0, wickets: 0, overs: "0.0" };
           const team2Score = data.score?.team2 || { runs: 0, wickets: 0, overs: "0.0" };
@@ -197,29 +321,44 @@ const Home = () => {
         const upcomingMatches = matchesWithTeams.filter(m => m.status === 'Upcoming');
         setFeaturedMatch(liveMatches[0] || upcomingMatches[0] || matchesWithTeams[0]);
 
-        // Fetch tournaments
-        const tournamentsCollection = collection(db, 'tournaments');
-        const tournamentsQuery = query(
+        // Update tournament fetching from 'leagues' collection
+        const tournamentsQueryWithLimit = query(
           tournamentsCollection,
-          where('status', 'in', ['Active', 'Upcoming']),
+          where('status', 'in', ['active', 'upcoming']),
           limit(5)
         );
-        const tournamentsSnapshot = await getDocs(tournamentsQuery);
-        const tournamentsData = tournamentsSnapshot.docs.map((doc) => ({
-          id: doc.id,
-          ...doc.data(),
-        }));
+        const tournamentsSnapshotWithLimit = await getDocs(tournamentsQueryWithLimit);
+        const tournamentsData = await Promise.all(
+          tournamentsSnapshotWithLimit.docs.map(async (doc) => {
+            const data = doc.data();
+            // Fetch team count for each tournament
+            const teamCount = data.teamIds?.length || 0;
+            
+            return {
+              id: doc.id,
+              name: data.name,
+              format: data.format,
+              matchType: data.matchType,
+              status: data.status,
+              startDate: data.startDate,
+              endDate: data.endDate,
+              venue: data.venue,
+              teams: teamCount,
+              thumbnail: data.thumbnail || '/default-tournament.png',
+              description: data.description || 'No description available'
+            };
+          })
+        );
         setTournaments(tournamentsData);
 
         // Fetch player stats (top performers)
-        const playersCollection = collection(db, 'players');
-        const playersQuery = query(
+        const playersQueryWithLimit = query(
           playersCollection,
           orderBy('stats.overall.matches', 'desc'),  // First sort by matches played
           limit(6)
         );
-        const playersSnapshot = await getDocs(playersQuery);
-        const playersData = playersSnapshot.docs.map((doc) => {
+        const playersSnapshotWithLimit = await getDocs(playersQueryWithLimit);
+        const playersData = playersSnapshotWithLimit.docs.map((doc) => {
           const data = doc.data();
           return {
             id: doc.id,
@@ -311,89 +450,152 @@ const Home = () => {
 
   return (
     <Container maxWidth="lg" sx={{ py: 4, mt: 2 }}>
-      {/* Hero Banner with Featured Match */}
-      <HeroBox>
-        {loading ? (
-          <Skeleton variant="rectangular" height={200} animation="wave" />
-        ) : featuredMatch ? (
-          <Box>
-            <Typography
-              variant="h4"
-              gutterBottom
-              sx={{ fontWeight: 'bold', mb: 3 }}
+      <PromotionalBanner>
+        <Grid container spacing={3}>
+          <Grid item xs={12} md={6}>
+            <Typography 
+              variant="h2" 
+              sx={{ 
+                fontWeight: 900,
+                mb: 2,
+                textShadow: '2px 2px 4px rgba(0,0,0,0.2)',
+                fontSize: { xs: '2.5rem', md: '3.5rem' },
+                lineHeight: 1.2
+              }}
             >
-              UPCOMING BLOCKBUSTER
+              IITH Cricket Championship 2024
+            </Typography>
+            <Typography 
+              variant="h5" 
+              sx={{ 
+                mb: 4, 
+                opacity: 0.9,
+                fontWeight: 300,
+                lineHeight: 1.4
+              }}
+            >
+              Experience the thrill of campus cricket - Where legends are made
             </Typography>
 
-            <Grid container spacing={2} alignItems="center" justifyContent="center">
-              <Grid item xs={4} md={4} sx={{ textAlign: 'center' }}>
-                <Avatar 
-                  src={featuredMatch.team1Logo} 
-                  alt={featuredMatch.team1}
-                  sx={{ width: 80, height: 80, mx: 'auto', mb: 1 }}
-                />
-                <Typography variant="h5" sx={{ fontWeight: 'bold' }}>
-                  {featuredMatch.team1}
-                </Typography>
-                <Typography variant="body2" color="inherit">
-                  Looking for a win
-                </Typography>
+            <Grid container spacing={2}>
+              <Grid item xs={6} sm={3}>
+                <AnimatedStatBox
+                  whileHover={{ scale: 1.05 }}
+                  whileTap={{ scale: 0.95 }}
+                  initial={{ opacity: 0, y: 20 }}
+                  animate={{ opacity: 1, y: 0 }}
+                >
+                  <StatNumber>
+                    <MotionValue value={totalStats.matchesPlayed} />
+                  </StatNumber>
+                  <Typography variant="body2">
+                    Matches Played
+                  </Typography>
+                </AnimatedStatBox>
               </Grid>
-
-              <Grid item xs={4} md={4} sx={{ textAlign: 'center' }}>
-                <Typography variant="h6" sx={{ mb: 1 }}>
-                  VS
-                </Typography>
-                <Typography variant="body2" sx={{ my: 1 }}>
-                  {new Date(featuredMatch.matchDate).toLocaleDateString('en-US', { 
-                    weekday: 'short', 
-                    month: 'short', 
-                    day: 'numeric' 
-                  })}
-                </Typography>
-                <Typography variant="body2" sx={{ mb: 1 }}>
-                  {featuredMatch.venue}
-                </Typography>
-                <Typography variant="caption" sx={{ display: 'block', mt: 1 }}>
-                  {featuredMatch.tournamentName}
-                </Typography>
+              <Grid item xs={6} sm={3}>
+                <AnimatedStatBox
+                  whileHover={{ scale: 1.05 }}
+                  whileTap={{ scale: 0.95 }}
+                  initial={{ opacity: 0, y: 20 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ delay: 0.1 }}
+                >
+                  <StatNumber sx={{ color: '#ff4444' }}>
+                    <MotionValue value={totalStats.liveMatches} />
+                  </StatNumber>
+                  <Typography variant="body2">
+                    Live Now
+                  </Typography>
+                </AnimatedStatBox>
               </Grid>
-
-              <Grid item xs={4} md={4} sx={{ textAlign: 'center' }}>
-                <Avatar 
-                  src={featuredMatch.team2Logo} 
-                  alt={featuredMatch.team2}
-                  sx={{ width: 80, height: 80, mx: 'auto', mb: 1 }}
-                />
-                <Typography variant="h5" sx={{ fontWeight: 'bold' }}>
-                  {featuredMatch.team2}
-                </Typography>
-                <Typography variant="body2" color="inherit">
-                  Ready for battle
-                </Typography>
+              <Grid item xs={6} sm={3}>
+                <AnimatedStatBox
+                  whileHover={{ scale: 1.05 }}
+                  whileTap={{ scale: 0.95 }}
+                  initial={{ opacity: 0, y: 20 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ delay: 0.2 }}
+                >
+                  <StatNumber>
+                    <MotionValue value={totalStats.activeTournaments} />
+                  </StatNumber>
+                  <Typography variant="body2">
+                    Active Tournaments
+                  </Typography>
+                </AnimatedStatBox>
+              </Grid>
+              <Grid item xs={6} sm={3}>
+                <AnimatedStatBox
+                  whileHover={{ scale: 1.05 }}
+                  whileTap={{ scale: 0.95 }}
+                  initial={{ opacity: 0, y: 20 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ delay: 0.3 }}
+                >
+                  <StatNumber>
+                    <MotionValue value={totalStats.totalPlayers} />
+                  </StatNumber>
+                  <Typography variant="body2">
+                    Active Players
+                  </Typography>
+                </AnimatedStatBox>
               </Grid>
             </Grid>
+          </Grid>
 
-            <Box sx={{ mt: 3, display: 'flex', justifyContent: 'center', gap: 2 }}>
-              <Button
-                component={Link}
-                to={`/matches/${featuredMatch.id}`}
-                variant="contained"
-                sx={{ 
-                  borderRadius: '24px',
-                  bgcolor: 'white',
-                  color: '#1b5e20',
-                  '&:hover': { bgcolor: 'rgba(255,255,255,0.9)' }
-                }}
-              >
-                Match Details
-              </Button>
-            </Box>
-          </Box>
-        ) : (
-          <Typography variant="h5">No featured matches available</Typography>
-        )}
-      </HeroBox>
+          <Grid item xs={12} md={6}>
+            <StatGrid container spacing={2}>
+              <Grid item xs={12}>
+                <Typography variant="h6" sx={{ mb: 2, color: 'white' }}>
+                  Tournament Highlights
+                </Typography>
+              </Grid>
+              {tournaments.slice(0, 3).map((tournament, index) => (
+                <Grid item xs={12} key={index}>
+                  <Box 
+                    sx={{ 
+                      p: 2,
+                      background: 'rgba(255, 255, 255, 0.05)',
+                      borderRadius: '8px',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: 2,
+                      transition: 'transform 0.2s',
+                      '&:hover': {
+                        transform: 'translateX(10px)',
+                        background: 'rgba(255, 255, 255, 0.1)',
+                      }
+                    }}
+                  >
+                    <Avatar 
+                      src={tournament.thumbnail} 
+                      variant="rounded"
+                      sx={{ width: 48, height: 48 }}
+                    />
+                    <Box sx={{ flexGrow: 1 }}>
+                      <Typography variant="subtitle1" sx={{ color: 'white' }}>
+                        {tournament.name}
+                      </Typography>
+                      <Typography variant="caption" sx={{ color: 'rgba(255,255,255,0.7)' }}>
+                        {tournament.teams} Teams • {tournament.format}
+                      </Typography>
+                    </Box>
+                    <Chip 
+                      label={tournament.status}
+                      size="small"
+                      sx={{ 
+                        bgcolor: tournament.status === 'active' ? '#ff4444' : 'primary.main',
+                        color: 'white'
+                      }}
+                    />
+                  </Box>
+                </Grid>
+              ))}
+            </StatGrid>
+          </Grid>
+        </Grid>
+      </PromotionalBanner>
 
       {/* Match Tabs Section */}
       <Paper 
@@ -635,98 +837,49 @@ const Home = () => {
                 <CardContent>
                   <Box sx={{ display: 'flex', alignItems: 'center', mb: 2 }}>
                     <Avatar 
-                      src={tournament.logo} 
+                      src={tournament.thumbnail} 
                       alt={tournament.name}
                       variant="rounded"
                       sx={{ width: 48, height: 48, mr: 2 }}
                     />
+                    <Box>
+                      <Typography variant="h6">
+                        {tournament.name}
+                      </Typography>
+                      <Typography variant="body2" color="text.secondary">
+                        {tournament.matchType} • {tournament.format}
+                      </Typography>
+                    </Box>
                   </Box>
-                  <Typography variant="h6" gutterBottom>
-                    {tournament.name}
-                  </Typography>
-                  
+
                   <Box sx={{ display: 'flex', alignItems: 'center', mb: 1 }}>
                     <Chip 
                       label={tournament.status}
                       size="small"
-                      color={tournament.status === 'Active' ? 'error' : tournament.status === 'Upcoming' ? 'primary' : 'success'}
+                      color={tournament.status === 'active' ? 'error' : 'primary'}
                       sx={{ mr: 1 }}
                     />
                     <Typography variant="body2" color="text.secondary">
-                      {tournament.format}
+                      at {tournament.venue}
                     </Typography>
                   </Box>
-                  
+
                   <Box sx={{ display: 'flex', alignItems: 'center', mb: 2 }}>
                     <CalendarTodayIcon fontSize="small" sx={{ mr: 1, color: 'text.secondary' }} />
                     <Typography variant="body2" color="text.secondary">
-                      {new Date(tournament.startDate).toLocaleDateString('en-US', { 
-                        month: 'short', 
-                        day: 'numeric' 
-                      })} - {new Date(tournament.endDate).toLocaleDateString('en-US', { 
-                        month: 'short', 
-                        day: 'numeric' 
-                      })}
+                      {new Date(tournament.startDate).toLocaleDateString()} - {new Date(tournament.endDate).toLocaleDateString()}
                     </Typography>
                   </Box>
-                  
+
                   <Typography variant="body2" gutterBottom>
-                    <strong>{tournament.teams}</strong> teams competing
+                    <strong>{tournament.teams}</strong> teams registered
                   </Typography>
-                  
-                  {tournament.status === 'Active' && (
-                    <Box sx={{ mt: 2, mb: 2 }}>
-                      <Typography variant="subtitle2" gutterBottom>
-                        Standings
-                      </Typography>
-                      <Box sx={{ 
-                        border: '1px solid #e0e0e0', 
-                        borderRadius: '8px',
-                        overflow: 'hidden',
-                        fontSize: '0.8rem'
-                      }}>
-                        <Box sx={{ 
-                          display: 'grid', 
-                          gridTemplateColumns: '3fr 1fr 1fr 1fr 1fr', 
-                          p: 1,
-                          backgroundColor: '#f5f5f5',
-                          fontWeight: 'bold'
-                        }}>
-                          <Box>Team</Box>
-                          <Box sx={{ textAlign: 'center' }}>P</Box>
-                          <Box sx={{ textAlign: 'center' }}>W</Box>
-                          <Box sx={{ textAlign: 'center' }}>L</Box>
-                          <Box sx={{ textAlign: 'center' }}>Pts</Box>
-                        </Box>
-                        
-                        {getTournamentStandings(tournament.id).slice(0, 3).map((team, idx) => (
-                          <Box key={idx} sx={{ 
-                            display: 'grid', 
-                            gridTemplateColumns: '3fr 1fr 1fr 1fr 1fr', 
-                            p: 1,
-                            borderTop: '1px solid #e0e0e0',
-                            backgroundColor: idx === 0 ? 'rgba(27, 94, 32, 0.05)' : 'transparent'
-                          }}>
-                            <Box>{team.team}</Box>
-                            <Box sx={{ textAlign: 'center' }}>{team.played}</Box>
-                            <Box sx={{ textAlign: 'center' }}>{team.won}</Box>
-                            <Box sx={{ textAlign: 'center' }}>{team.lost}</Box>
-                            <Box sx={{ textAlign: 'center', fontWeight: 'bold' }}>{team.points}</Box>
-                          </Box>
-                        ))}
-                      </Box>
-                    </Box>
+
+                  {tournament.description && (
+                    <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
+                      {tournament.description}
+                    </Typography>
                   )}
-                  
-                  <Button
-                    component={Link}
-                    to={`/tournaments/${tournament.id}`}
-                    variant="outlined"
-                    size="small"
-                    sx={{ borderRadius: '20px', textTransform: 'none', mt: 'auto' }}
-                  >
-                    View Tournament
-                  </Button>
                 </CardContent>
               </StyledCard>
             </Grid>

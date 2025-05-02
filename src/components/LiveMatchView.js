@@ -18,47 +18,74 @@ import {
 const LiveMatchView = () => {
   const { matchId } = useParams();
   const [match, setMatch] = useState(null);
-  const [ballByBall, setBallByBall] = useState([]);
+  const [currentOver, setCurrentOver] = useState({
+    balls: [],
+    overNumber: 0,
+    ballNumber: 0
+  });
   const [loading, setLoading] = useState(true);
   const [lastBalls, setLastBalls] = useState([]);
 
   useEffect(() => {
-    const unsubscribe = onSnapshot(doc(db, 'matches', matchId), (doc) => {
+    // Listen to real-time match updates
+    const matchUnsubscribe = onSnapshot(doc(db, 'matches', matchId), (doc) => {
       if (doc.exists()) {
-        setMatch({ id: doc.id, ...doc.data() });
-        updateLastBalls(doc.data().currentOver?.balls || []);
+        const matchData = { id: doc.id, ...doc.data() };
+        setMatch(matchData);
       }
       setLoading(false);
     });
 
-    return () => unsubscribe();
-  }, [matchId]);
-
-  useEffect(() => {
-    const q = query(
-      collection(db, 'balls'),
-      where('matchId', '==', matchId),
-      orderBy('timestamp', 'desc'),
-      limit(30)
+    // Listen to current over updates
+    const currentOverUnsubscribe = onSnapshot(
+      doc(db, 'currentMatch', matchId),
+      (doc) => {
+        if (doc.exists()) {
+          const data = doc.data();
+          setCurrentOver({
+            balls: data.currentOverBalls || [],
+            overNumber: data.currentOver || 0,
+            ballNumber: data.currentBall || 0
+          });
+          updateLastBalls(data.currentOverBalls || []);
+        }
+      }
     );
 
-    const unsubscribe = onSnapshot(q, (snapshot) => {
-      const balls = snapshot.docs.map(doc => ({
-        id: doc.id,
-        ...doc.data()
-      }));
-      setBallByBall(balls);
-    });
-
-    return () => unsubscribe();
+    return () => {
+      matchUnsubscribe();
+      currentOverUnsubscribe();
+    };
   }, [matchId]);
 
   const updateLastBalls = (balls) => {
-    setLastBalls(balls.map(ball => ({
+    const formattedBalls = balls.map(ball => ({
       runs: ball.runs,
       isWicket: ball.isWicket,
-      color: ball.isWicket ? 'error' : ball.runs === 4 || ball.runs === 6 ? 'success' : 'default'
-    })));
+      isExtra: ball.isExtra,
+      extraType: ball.extraType,
+      color: getBallColor(ball)
+    }));
+    setLastBalls(formattedBalls);
+  };
+
+  const getBallColor = (ball) => {
+    if (ball.isWicket) return 'error';
+    if (ball.isExtra) return 'warning';
+    if (ball.runs === 4 || ball.runs === 6) return 'success';
+    return 'default';
+  };
+
+  const getBallDisplay = (ball) => {
+    if (ball.isWicket) return 'W';
+    if (ball.isExtra) return ball.extraType[0];
+    return ball.runs.toString();
+  };
+
+  const calculateRunRate = (runs, overs) => {
+    if (!overs) return 0;
+    const totalOvers = parseInt(overs) + (currentOver.ballNumber / 6);
+    return (runs / totalOvers).toFixed(2);
   };
 
   if (loading) {
@@ -109,7 +136,7 @@ const LiveMatchView = () => {
               {match.score?.team1?.runs || 0}/{match.score?.team1?.wickets || 0}
             </Typography>
             <Typography variant="subtitle1">
-              ({match.score?.team1?.overs || 0} overs)
+              ({match.score?.team1?.overs || 0}.{currentOver.ballNumber} overs)
             </Typography>
           </Grid>
 
@@ -140,16 +167,21 @@ const LiveMatchView = () => {
         <Grid item xs={12} md={8}>
           <Card sx={{ p: 2 }}>
             <Typography variant="h6" gutterBottom>
-              This Over
+              Over {currentOver.overNumber + 1} ({currentOver.ballNumber}/6)
             </Typography>
             <Stack direction="row" spacing={1} sx={{ mb: 2 }}>
               {lastBalls.map((ball, index) => (
                 <Chip
                   key={index}
-                  label={ball.isWicket ? 'W' : ball.runs}
+                  label={getBallDisplay(ball)}
                   color={ball.color}
                   size="small"
-                  sx={{ width: 40, height: 40 }}
+                  sx={{
+                    width: 40,
+                    height: 40,
+                    fontWeight: 'bold',
+                    animation: ball.runs >= 4 ? 'pulse 1s' : 'none'
+                  }}
                 />
               ))}
             </Stack>
@@ -170,7 +202,10 @@ const LiveMatchView = () => {
                 </ListItemAvatar>
                 <ListItemText 
                   primary="Current Run Rate"
-                  secondary={((match.score?.team1?.runs || 0) / (match.score?.team1?.overs || 1)).toFixed(2)}
+                  secondary={calculateRunRate(
+                    match?.score?.team1?.runs || 0,
+                    match?.score?.team1?.overs || 0
+                  )}
                 />
               </ListItem>
               <ListItem>
@@ -195,7 +230,7 @@ const LiveMatchView = () => {
           Ball by Ball
         </Typography>
         <List>
-          {ballByBall.map((ball, index) => (
+          {currentOver.balls.map((ball, index) => (
             <ListItem 
               key={index}
               sx={{
@@ -211,7 +246,7 @@ const LiveMatchView = () => {
                 </Avatar>
               </ListItemAvatar>
               <ListItemText 
-                primary={`${ball.over}.${ball.ballNumber} - ${ball.commentary}`}
+                primary={`${currentOver.overNumber}.${index + 1} - ${ball.commentary}`}
                 secondary={`${ball.runs} runs`}
               />
             </ListItem>

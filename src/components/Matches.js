@@ -36,6 +36,7 @@ const Matches = () => {
   const [teams, setTeams] = useState([]);
   const [venues, setVenues] = useState([]);
   const [snackbar, setSnackbar] = useState({ open: false, message: '', severity: 'success' });
+  const [advancedFiltersOpen, setAdvancedFiltersOpen] = useState(false);
 
   // Load matches and reference data
   useEffect(() => {
@@ -165,6 +166,8 @@ const Matches = () => {
         setFilterTeam={setFilterTeam}
         filterMatchType={filterMatchType}
         setFilterMatchType={setFilterMatchType}
+        advancedFiltersOpen={advancedFiltersOpen}
+        setAdvancedFiltersOpen={setAdvancedFiltersOpen}
         leagues={leagues}
         teams={teams}
         venues={venues}

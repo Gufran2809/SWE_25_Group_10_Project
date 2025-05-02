@@ -78,6 +78,7 @@ import {
   getDocs,
   getDoc,
   increment,
+  writeBatch,
 } from 'firebase/firestore';
 import { getStorage, ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { Link } from 'react-router-dom';
@@ -222,6 +223,10 @@ const Leagues = () => {
     bowlerId: '',
     wicketType: '',
     nonStrikerId: '',
+    partnership: {
+      runs: 0,
+      balls: 0
+    }
   });
   const [bracketData, setBracketData] = useState([]);
   const [poolData, setPoolData] = useState([]);
@@ -705,6 +710,10 @@ const Leagues = () => {
         nonStrikerId: '',
         bowlerId: '',
         wicketType: '',
+        partnership: {
+          runs: 0,
+          balls: 0
+        }
       });
       setOpenScoringDialog(true);
     } catch (error) {
@@ -718,7 +727,7 @@ const Leagues = () => {
 
   const handleScoringDialogClose = () => {
     setOpenScoringDialog(false);
-    setScoringData({ matchId: '', over: 0, ball: 1, runs: 0, extra: '', wicket: false, batsmanId: '', bowlerId: '', wicketType: '', nonStrikerId: '' });
+    setScoringData({ matchId: '', over: 0, ball: 1, runs: 0, extra: '', wicket: false, batsmanId: '', bowlerId: '', wicketType: '', nonStrikerId: '', partnership: { runs: 0, balls: 0 } });
     setSelectedMatch(null);
   };
 
@@ -799,53 +808,115 @@ const Leagues = () => {
       if (!user) throw new Error('You must be signed in');
       setLoading(true);
 
-      // Only update batsman stats if it's not a wide or no ball
-      if (!['wide', 'noBall'].includes(scoringData.extra)) {
-        await updateBatsmanStats(scoringData.batsmanId, scoringData.runs, scoringData.wicket);
-      }
+      // Determine current innings key (team1 or team2)
+      const inningsKey = battingTeam === selectedMatch.team1Id ? 'team1' : 'team2';
 
-      // Update match state
-      await updateLiveMatchState(selectedMatch.id, scoringData, battingTeam);
-
-      // Add commentary
-      const commentaryId = `comment-${Date.now()}`;
-      await addDoc(collection(db, 'commentary'), {
-        id: commentaryId,
-        matchId: selectedMatch.id,
+      // Create ball data object
+      const ballData = {
         over: scoringData.over,
         ball: scoringData.ball,
+        batsmanId: scoringData.batsmanId,
+        bowlerId: scoringData.bowlerId,
+        nonStrikerId: scoringData.nonStrikerId,
         runs: scoringData.runs,
         extra: scoringData.extra,
         wicket: scoringData.wicket,
         wicketType: scoringData.wicketType,
-        batsmanId: scoringData.batsmanId,
-        bowlerId: scoringData.bowlerId,
-        commentary: generateCommentary(scoringData.runs, scoringData.extra, scoringData.wicket, scoringData.wicketType)
-      });
+        timestamp: new Date().toISOString()
+      };
 
-      // Rotate strike if needed
-      const shouldRotateStrike = 
-        (scoringData.runs % 2 === 1 && !scoringData.extra) || 
-        (!scoringData.extra && scoringData.ball === 6);
+      // Calculate actual runs (including extras)
+      const totalRuns = scoringData.runs + (scoringData.extra === 'wide' || scoringData.extra === 'noBall' ? 1 : 0);
 
-      if (shouldRotateStrike) {
-        rotateStrike();
+      // Calculate next ball and over
+      let nextBall = scoringData.ball;
+      let nextOver = scoringData.over;
+      
+      // Only increment ball if not a wide or no-ball
+      if (!['wide', 'noBall'].includes(scoringData.extra)) {
+        nextBall++;
+        if (nextBall > 6) {
+          nextBall = 1;
+          nextOver++;
+        }
       }
 
-      // Reset ball data
+      // Create batch write
+      const batch = writeBatch(db);
+      const matchRef = doc(db, 'matches', selectedMatch.id);
+
+      // Update match document
+      batch.update(matchRef, {
+        currentBall: nextBall,
+        currentOver: nextOver,
+        currentBatsman: scoringData.batsmanId,
+        currentNonStriker: scoringData.nonStrikerId,
+        currentBowler: scoringData.bowlerId,
+        [`currentOverBalls.${scoringData.over}`]: arrayUnion(ballData),
+        lastBall: ballData,
+        [`score.${inningsKey}.runs`]: increment(totalRuns),
+        [`score.${inningsKey}.wickets`]: scoringData.wicket ? increment(1) : increment(0),
+        [`score.${inningsKey}.overs`]: `${nextOver}.${nextBall - 1}`
+      });
+
+      // Update batsman stats
+      if (!['wide', 'noBall'].includes(scoringData.extra)) {
+        const batsmanRef = doc(db, 'players', scoringData.batsmanId);
+        batch.update(batsmanRef, {
+          'stats.runs': increment(scoringData.runs),
+          'stats.ballsFaced': increment(1),
+          'stats.fours': scoringData.runs === 4 ? increment(1) : increment(0),
+          'stats.sixes': scoringData.runs === 6 ? increment(1) : increment(0)
+        });
+      }
+
+      // Add ball commentary
+      const commentaryId = `comment-${Date.now()}`;
+      const commentaryRef = doc(db, 'commentary', commentaryId);
+      batch.set(commentaryRef, {
+        id: commentaryId,
+        matchId: selectedMatch.id,
+        over: scoringData.over,
+        ball: scoringData.ball,
+        commentary: generateCommentary(scoringData.runs, scoringData.extra, scoringData.wicket, scoringData.wicketType, selectedMatch),
+        timestamp: new Date().toISOString()
+      });
+
+      // Commit all updates
+      await batch.commit();
+
+      // Log database updates for verification
+      console.log('Database Update Summary:', {
+        matchId: selectedMatch.id,
+        over: nextOver,
+        ball: nextBall,
+        runs: totalRuns,
+        batsmanId: scoringData.batsmanId,
+        nonStrikerId: scoringData.nonStrikerId,
+        currentScore: `${selectedMatch.score[inningsKey].runs + totalRuns}/${selectedMatch.score[inningsKey].wickets + (scoringData.wicket ? 1 : 0)}`
+      });
+
+      // Update local scoring data and rotate strike if needed
       setScoringData(prev => ({
         ...prev,
+        ball: nextBall,
+        over: nextOver,
         runs: 0,
         extra: '',
         wicket: false,
         wicketType: '',
-        ball: prev.ball === 6 ? 1 : prev.ball + 1,
-        over: prev.ball === 6 ? prev.over + 1 : prev.over
+        // Rotate strike for odd runs or end of over
+        ...(scoringData.runs % 2 === 1 || nextBall === 1 ? {
+          batsmanId: prev.nonStrikerId,
+          nonStrikerId: prev.batsmanId
+        } : {})
       }));
 
       setSnackbar({ open: true, message: 'Ball recorded successfully!' });
+
     } catch (error) {
-      handleError(error, 'Failed to record ball');
+      console.error('Error recording ball:', error);
+      setSnackbar({ open: true, message: 'Failed to record ball: ' + error.message });
     } finally {
       setLoading(false);
     }

@@ -19,163 +19,242 @@ import BarChartIcon from '@mui/icons-material/BarChart';
 const MatchDetail = () => {
   const { matchId } = useParams();
   const [match, setMatch] = useState(null);
+  const [teams, setTeams] = useState({});
+  const [league, setLeague] = useState(null);
   const [commentary, setCommentary] = useState([]);
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState(0);
   const [matchStats, setMatchStats] = useState(null);
 
   useEffect(() => {
-    const unsubscribe = onSnapshot(
-      doc(db, 'matches', matchId),
-      (doc) => {
-        if (doc.exists()) {
-          setMatch({ id: doc.id, ...doc.data() });
-          calculateMatchStats(doc.data());
-        }
+    const fetchMatchData = async () => {
+      try {
+        const unsubscribeMatch = onSnapshot(
+          doc(db, 'matches', matchId),
+          async (matchDoc) => {
+            if (!matchDoc.exists()) return;
+            const matchData = { id: matchDoc.id, ...matchDoc.data() };
+
+            const [team1Doc, team2Doc] = await Promise.all([
+              getDoc(doc(db, 'teams', matchData.team1Id)),
+              getDoc(doc(db, 'teams', matchData.team2Id))
+            ]);
+
+            const leagueDoc = await getDoc(doc(db, 'leagues', matchData.leagueId));
+
+            setMatch({
+              ...matchData,
+              team1: team1Doc.data()?.name,
+              team2: team2Doc.data()?.name,
+              team1Logo: team1Doc.data()?.logo,
+              team2Logo: team2Doc.data()?.logo
+            });
+            setTeams({
+              [matchData.team1Id]: team1Doc.data(),
+              [matchData.team2Id]: team2Doc.data()
+            });
+            setLeague(leagueDoc.data());
+            calculateMatchStats(matchData);
+          }
+        );
+
+        const commentaryQuery = query(
+          collection(db, 'commentary'),
+          where('matchId', '==', matchId),
+          orderBy('timestamp', 'desc')
+        );
+
+        const unsubscribeCommentary = onSnapshot(commentaryQuery, (snapshot) => {
+          const comments = snapshot.docs.map(doc => ({
+            id: doc.id,
+            ...doc.data()
+          }));
+          setCommentary(comments);
+        });
+
+        setLoading(false);
+        return () => {
+          unsubscribeMatch();
+          unsubscribeCommentary();
+        };
+      } catch (error) {
+        console.error('Error fetching match data:', error);
         setLoading(false);
       }
-    );
-
-    return () => unsubscribe();
-  }, [matchId]);
-
-  useEffect(() => {
-    const fetchCommentary = async () => {
-      const q = query(
-        collection(db, 'commentary'),
-        where('matchId', '==', matchId),
-        orderBy('timestamp', 'desc')
-      );
-      
-      const unsubscribe = onSnapshot(q, (snapshot) => {
-        const comments = snapshot.docs.map(doc => ({
-          id: doc.id,
-          ...doc.data()
-        }));
-        setCommentary(comments);
-      });
-
-      return () => unsubscribe();
     };
 
-    fetchCommentary();
+    fetchMatchData();
   }, [matchId]);
 
   const calculateMatchStats = (matchData) => {
     if (!matchData?.score) return;
 
     const stats = {
-      runRate: ((matchData.score.team1?.runs || 0) / (matchData.score.team1?.overs || 1)).toFixed(2),
+      runRate: 0,
       requiredRate: 0,
       predictedScore: 0,
       boundaries: {
-        fours: matchData.score.batting?.reduce((acc, bat) => acc + (bat.fours || 0), 0) || 0,
-        sixes: matchData.score.batting?.reduce((acc, bat) => acc + (bat.sixes || 0), 0) || 0
+        fours: 0,
+        sixes: 0
+      },
+      extras: {
+        total: 0,
+        wides: 0,
+        noBalls: 0,
+        byes: 0,
+        legByes: 0
       }
     };
 
-    if (matchData.score.team2) {
-      const remainingRuns = (matchData.score.team1?.runs || 0) - (matchData.score.team2?.runs || 0);
-      const remainingOvers = 20 - (matchData.score.team2?.overs || 0);
-      stats.requiredRate = (remainingRuns / remainingOvers).toFixed(2);
+    const battingTeam = matchData.battingTeam === matchData.team1Id ? 'team1' : 'team2';
+    const currentInningsScore = matchData.score[battingTeam];
+    if (currentInningsScore) {
+      stats.runRate = (currentInningsScore.runs / parseFloat(currentInningsScore.overs || 1)).toFixed(2);
     }
+
+    if (matchData.score.team1 && matchData.score.team2) {
+      const target = matchData.score.team1.runs + 1;
+      const remainingRuns = target - (matchData.score.team2.runs || 0);
+      const remainingOvers = matchData.overs - parseFloat(matchData.score.team2.overs || 0);
+      if (remainingOvers > 0) {
+        stats.requiredRate = (remainingRuns / remainingOvers).toFixed(2);
+      }
+    }
+
+    Object.values(matchData.battingStats || {}).forEach(batsman => {
+      stats.boundaries.fours += batsman.fours || 0;
+      stats.boundaries.sixes += batsman.sixes || 0;
+    });
 
     setMatchStats(stats);
   };
 
-  const renderScorecard = () => (
-    <Box>
-      <Typography variant="h6" gutterBottom sx={{ mt: 4, color: 'primary.main' }}>
-        Detailed Scorecard
-      </Typography>
-      
-      <Card variant="outlined" sx={{ mb: 3, overflow: 'auto' }}>
-        <Table size="small">
-          <TableHead>
-            <TableRow sx={{ bgcolor: 'grey.100' }}>
-              <TableCell sx={{ fontWeight: 'bold' }}>Batsman</TableCell>
-              <TableCell align="right">Runs</TableCell>
-              <TableCell align="right">Balls</TableCell>
-              <TableCell align="right">4s</TableCell>
-              <TableCell align="right">6s</TableCell>
-              <TableCell align="right">SR</TableCell>
-            </TableRow>
-          </TableHead>
-          <TableBody>
-            {match.score?.batting?.map((batsman, index) => (
-              <TableRow 
-                key={index}
-                sx={{ 
-                  '&:nth-of-type(odd)': { bgcolor: 'action.hover' },
-                  '&:last-child td': { border: 0 }
-                }}
-              >
-                <TableCell component="th" scope="row">
-                  <Box sx={{ display: 'flex', alignItems: 'center' }}>
-                    {batsman.name}
-                    {batsman.isNotOut && (
-                      <Chip 
-                        label="not out" 
-                        size="small" 
-                        color="success" 
-                        sx={{ ml: 1 }}
-                      />
-                    )}
-                  </Box>
-                </TableCell>
-                <TableCell align="right">{batsman.runs}</TableCell>
-                <TableCell align="right">{batsman.balls}</TableCell>
-                <TableCell align="right">{batsman.fours}</TableCell>
-                <TableCell align="right">{batsman.sixes}</TableCell>
-                <TableCell align="right">
-                  {((batsman.runs / batsman.balls) * 100).toFixed(2)}
-                </TableCell>
-              </TableRow>
-            ))}
-          </TableBody>
-        </Table>
-      </Card>
+  const renderScorecard = () => {
+    if (!match || !match.battingStats || !match.bowlingStats) {
+      return (
+        <Box sx={{ p: 2 }}>
+          <Typography variant="body1" color="text.secondary">
+            No scorecard data available
+          </Typography>
+        </Box>
+      );
+    }
 
-      {/* Bowling Card */}
-      <Typography variant="h6" gutterBottom sx={{ color: 'primary.main' }}>
-        Bowling Statistics
-      </Typography>
-      <Card variant="outlined" sx={{ mb: 3, overflow: 'auto' }}>
-        <Table size="small">
-          <TableHead>
-            <TableRow sx={{ bgcolor: 'grey.100' }}>
-              <TableCell>Bowler</TableCell>
-              <TableCell align="right">O</TableCell>
-              <TableCell align="right">M</TableCell>
-              <TableCell align="right">R</TableCell>
-              <TableCell align="right">W</TableCell>
-              <TableCell align="right">Econ</TableCell>
-            </TableRow>
-          </TableHead>
-          <TableBody>
-            {match.score?.bowling?.map((bowler, index) => (
-              <TableRow 
-                key={index}
-                sx={{ 
-                  '&:nth-of-type(odd)': { bgcolor: 'action.hover' },
-                  '&:last-child td': { border: 0 }
-                }}
-              >
-                <TableCell>{bowler.name}</TableCell>
-                <TableCell align="right">{bowler.overs}</TableCell>
-                <TableCell align="right">{bowler.maidens}</TableCell>
-                <TableCell align="right">{bowler.runs}</TableCell>
-                <TableCell align="right">{bowler.wickets}</TableCell>
-                <TableCell align="right">
-                  {(bowler.runs / bowler.overs).toFixed(2)}
-                </TableCell>
+    return (
+      <Box>
+        <Typography variant="h6" gutterBottom sx={{ mt: 4, color: 'primary.main' }}>
+          Detailed Scorecard
+        </Typography>
+        
+        <Card variant="outlined" sx={{ mb: 3, overflow: 'auto' }}>
+          <Table size="small">
+            <TableHead>
+              <TableRow sx={{ bgcolor: 'grey.100' }}>
+                <TableCell sx={{ fontWeight: 'bold' }}>Batsman</TableCell>
+                <TableCell align="right">Runs</TableCell>
+                <TableCell align="right">Balls</TableCell>
+                <TableCell align="right">4s</TableCell>
+                <TableCell align="right">6s</TableCell>
+                <TableCell align="right">SR</TableCell>
               </TableRow>
-            ))}
-          </TableBody>
-        </Table>
-      </Card>
-    </Box>
-  );
+            </TableHead>
+            <TableBody>
+              {Object.values(match.battingStats).map((batsman, index) => {
+                // Calculate strike rate
+                const strikeRate = batsman.ballsFaced > 0 
+                  ? ((batsman.runs / batsman.ballsFaced) * 100)
+                  : 0;
+
+                return (
+                  <TableRow 
+                    key={batsman.id || index}
+                    sx={{ 
+                      '&:nth-of-type(odd)': { bgcolor: 'action.hover' },
+                      '&:last-child td': { border: 0 }
+                    }}
+                  >
+                    <TableCell component="th" scope="row">
+                      <Box sx={{ display: 'flex', alignItems: 'center' }}>
+                        {batsman.name}
+                        {(match.currentBatsman === batsman.id || match.currentNonStriker === batsman.id) && (
+                          <Chip 
+                            label="batting" 
+                            size="small" 
+                            color="primary" 
+                            sx={{ ml: 1 }}
+                          />
+                        )}
+                      </Box>
+                    </TableCell>
+                    <TableCell align="right">{batsman.runs || 0}</TableCell>
+                    <TableCell align="right">{batsman.ballsFaced || 0}</TableCell>
+                    <TableCell align="right">{batsman.fours || 0}</TableCell>
+                    <TableCell align="right">{batsman.sixes || 0}</TableCell>
+                    <TableCell align="right">{strikeRate.toFixed(2)}</TableCell>
+                  </TableRow>
+                );
+              })}
+            </TableBody>
+          </Table>
+        </Card>
+
+        <Typography variant="h6" gutterBottom sx={{ color: 'primary.main' }}>
+          Bowling Statistics
+        </Typography>
+        <Card variant="outlined" sx={{ mb: 3, overflow: 'auto' }}>
+          <Table size="small">
+            <TableHead>
+              <TableRow sx={{ bgcolor: 'grey.100' }}>
+                <TableCell>Bowler</TableCell>
+                <TableCell align="right">O</TableCell>
+                <TableCell align="right">M</TableCell>
+                <TableCell align="right">R</TableCell>
+                <TableCell align="right">W</TableCell>
+                <TableCell align="right">Econ</TableCell>
+              </TableRow>
+            </TableHead>
+            <TableBody>
+              {Object.values(match.bowlingStats).map((bowler, index) => {
+                // Calculate economy rate
+                const economy = bowler.overs > 0 
+                  ? (bowler.runs / parseFloat(bowler.overs))
+                  : 0;
+
+                return (
+                  <TableRow 
+                    key={bowler.id || index}
+                    sx={{ 
+                      '&:nth-of-type(odd)': { bgcolor: 'action.hover' },
+                      '&:last-child td': { border: 0 }
+                    }}
+                  >
+                    <TableCell>
+                      <Box sx={{ display: 'flex', alignItems: 'center' }}>
+                        {bowler.name}
+                        {match.currentBowler === bowler.id && (
+                          <Chip 
+                            label="bowling" 
+                            size="small" 
+                            color="primary" 
+                            sx={{ ml: 1 }}
+                          />
+                        )}
+                      </Box>
+                    </TableCell>
+                    <TableCell align="right">{bowler.overs || 0}</TableCell>
+                    <TableCell align="right">{bowler.maidens || 0}</TableCell>
+                    <TableCell align="right">{bowler.runs || 0}</TableCell>
+                    <TableCell align="right">{bowler.wickets || 0}</TableCell>
+                    <TableCell align="right">{economy.toFixed(2)}</TableCell>
+                  </TableRow>
+                );
+              })}
+            </TableBody>
+          </Table>
+        </Card>
+      </Box>
+    );
+  };
 
   const renderCommentary = () => (
     <Timeline>
@@ -274,10 +353,19 @@ const MatchDetail = () => {
     <Container maxWidth="lg" sx={{ py: 4 }}>
       <Paper elevation={3} sx={{ p: 3, mb: 3, borderRadius: '12px' }}>
         <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3 }}>
-          <Typography variant="h4">Match Details</Typography>
-          <IconButton onClick={() => window.location.reload()}>
-            <RefreshIcon />
-          </IconButton>
+          <Typography variant="h4">
+            {match?.title || `${match?.team1} vs ${match?.team2}`}
+          </Typography>
+          <Box>
+            <Chip 
+              label={match?.status?.toUpperCase()} 
+              color={match?.status === 'live' ? 'error' : 'default'}
+              sx={{ mr: 1 }}
+            />
+            <IconButton onClick={() => window.location.reload()}>
+              <RefreshIcon />
+            </IconButton>
+          </Box>
         </Box>
 
         <Grid container spacing={3} sx={{ mb: 3 }}>

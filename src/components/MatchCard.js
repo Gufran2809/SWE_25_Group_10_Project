@@ -1,5 +1,7 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { doc, onSnapshot } from 'firebase/firestore';
+import { db } from '../firebase';
 import { Card, CardContent, Typography, Box, Chip, Divider, Grid, IconButton, Button, Avatar } from '@mui/material';
 import { alpha } from '@mui/material/styles';
 import { Edit as EditIcon, Delete as DeleteIcon, PlayArrow as PlayArrowIcon, VisibilityOutlined as ViewIcon, EmojiEvents as TrophyIcon, Schedule as ScheduleIcon, Place as PlaceIcon, SportsCricket as SportsCricketIcon } from '@mui/icons-material';
@@ -55,7 +57,59 @@ const MatchCard = ({
   handleViewScorecard,
 }) => {
   const navigate = useNavigate();
-  
+  const [matchData, setMatchData] = useState(null);
+
+  // Subscribe to real-time match updates
+  useEffect(() => {
+    const unsubscribe = onSnapshot(doc(db, 'matches', match.id), (doc) => {
+      if (doc.exists()) {
+        setMatchData({ id: doc.id, ...doc.data() });
+      }
+    });
+
+    return () => unsubscribe();
+  }, [match.id]);
+
+  // Determine match status based on balls bowled
+  const getMatchStatus = (matchData) => {
+    if (!matchData) return 'upcoming';
+
+    const totalOversTeam1 = parseFloat(matchData.score?.team1?.overs || '0');
+    const totalOversTeam2 = parseFloat(matchData.score?.team2?.overs || '0');
+    const maxOvers = matchData.overs || 20;
+
+    if (
+      (totalOversTeam1 >= maxOvers && totalOversTeam2 >= maxOvers) ||
+      (totalOversTeam2 > 0 && matchData.score?.team2?.runs > matchData.score?.team1?.runs) ||
+      (matchData.score?.team1?.wickets === 10 && matchData.score?.team2?.wickets === 10)
+    ) {
+      return 'completed';
+    }
+
+    if (totalOversTeam1 > 0 || totalOversTeam2 > 0) {
+      return 'live';
+    }
+
+    return 'upcoming';
+  };
+
+  const getCurrentInningsDetails = (matchData) => {
+    if (!matchData || !matchData.battingTeam) return null;
+
+    const inningsKey = matchData.battingTeam === matchData.team1Id ? 'team1' : 'team2';
+    const currentInnings = matchData.score[inningsKey];
+
+    return {
+      runs: currentInnings.runs,
+      wickets: currentInnings.wickets,
+      overs: currentInnings.overs,
+      currentBatsman: matchData.currentBatsman,
+      currentNonStriker: matchData.currentNonStriker,
+      currentBowler: matchData.currentBowler,
+      recentBalls: matchData.currentOverBalls?.[matchData.currentOver] || []
+    };
+  };
+
   const formatMatchDate = (dateObj) => {
     if (!dateObj) return 'Date not set';
     try {
@@ -74,9 +128,13 @@ const MatchCard = ({
     return match.status === 'upcoming' && hoursDiff > 0 && hoursDiff < 24;
   };
 
+  const displayData = matchData || match;
+  const matchStatus = getMatchStatus(displayData);
+  const currentInnings = getCurrentInningsDetails(displayData);
+
   return (
-    <StyledCard elevation={match.isFeatured ? 6 : 2}>
-      {match.isFeatured && (
+    <StyledCard elevation={displayData.isFeatured ? 6 : 2}>
+      {displayData.isFeatured && (
         <Box sx={{ bgcolor: 'warning.main', color: 'warning.contrastText', py: 0.5, textAlign: 'center' }}>
           <Typography variant="caption" sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
             <TrophyIcon fontSize="small" sx={{ mr: 0.5 }} /> FEATURED MATCH
@@ -84,33 +142,26 @@ const MatchCard = ({
         </Box>
       )}
       <CardContent sx={{ flexGrow: 1, pb: 1 }}>
-        {match.status === 'live' && (
-          <Box mb={1}>
-            <img
-              src="https://via.placeholder.com/300x150?text=Live+Stream+Preview"
-              alt="Live Stream Preview"
-              style={{ width: '100%', height: 'auto', borderRadius: '8px', cursor: 'pointer' }}
-              onClick={() => navigate(`/matches/${match.id}/live`)}
-            />
-          </Box>
-        )}
         <Box display="flex" justifyContent="space-between" alignItems="center" mb={1}>
-          <Typography variant="subtitle2" color="textSecondary">{getLeagueName(match.leagueId)}</Typography>
+          <Typography variant="subtitle2" color="textSecondary">{getLeagueName(displayData.leagueId)}</Typography>
           <Box display="flex" alignItems="center">
             {isMatchSoon() && <Chip label="SOON" size="small" color="warning" sx={{ mr: 1, height: 24 }} />}
-            <StatusChip label={match.status.toUpperCase()} status={match.status} size="small" />
+            <StatusChip label={matchStatus.toUpperCase()} status={matchStatus} size="small" />
           </Box>
         </Box>
         <Typography variant="h6" sx={{ fontWeight: 'bold', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-          {match.title || `${getTeamName(match.team1Id)} vs ${getTeamName(match.team2Id)}`}
+          {displayData.title || `${getTeamName(displayData.team1Id)} vs ${getTeamName(displayData.team2Id)}`}
         </Typography>
         <Box display="flex" justifyContent="space-between" alignItems="center" mb={2} mt={3}>
           <Box textAlign="center" width="40%">
-            <TeamAvatar src={match.teams && match.teams[0]?.logo} alt={getTeamName(match.team1Id)} sx={{ mx: 'auto', mb: 1 }} />
-            <Typography variant="body2" sx={{ fontWeight: 'medium' }}>{getTeamName(match.team1Id)}</Typography>
-            {match.status !== 'upcoming' && match.score?.team1 && (
+            <TeamAvatar src={displayData.teams?.[0]?.logo} alt={getTeamName(displayData.team1Id)} sx={{ mx: 'auto', mb: 1 }} />
+            <Typography variant="body2" sx={{ fontWeight: 'medium' }}>{getTeamName(displayData.team1Id)}</Typography>
+            {matchStatus !== 'upcoming' && displayData.score?.team1 && (
               <Typography variant="body1" sx={{ fontWeight: 'bold', fontFamily: '"Roboto Mono", monospace' }}>
-                {match.score.team1.runs}/{match.score.team1.wickets}
+                {displayData.score.team1.runs}/{displayData.score.team1.wickets}
+                <Typography variant="caption" display="block">
+                  ({displayData.score.team1.overs})
+                </Typography>
               </Typography>
             )}
           </Box>
@@ -118,11 +169,14 @@ const MatchCard = ({
             VS
           </Typography>
           <Box textAlign="center" width="40%">
-            <TeamAvatar src={match.teams && match.teams[1]?.logo} alt={getTeamName(match.team2Id)} sx={{ mx: 'auto', mb: 1 }} />
-            <Typography variant="body2" sx={{ fontWeight: 'medium' }}>{getTeamName(match.team2Id)}</Typography>
-            {match.status !== 'upcoming' && match.score?.team2 && (
+            <TeamAvatar src={displayData.teams?.[1]?.logo} alt={getTeamName(displayData.team2Id)} sx={{ mx: 'auto', mb: 1 }} />
+            <Typography variant="body2" sx={{ fontWeight: 'medium' }}>{getTeamName(displayData.team2Id)}</Typography>
+            {matchStatus !== 'upcoming' && displayData.score?.team2 && (
               <Typography variant="body1" sx={{ fontWeight: 'bold', fontFamily: '"Roboto Mono", monospace' }}>
-                {match.score.team2.runs}/{match.score.team2.wickets}
+                {displayData.score.team2.runs}/{displayData.score.team2.wickets}
+                <Typography variant="caption" display="block">
+                  ({displayData.score.team2.overs})
+                </Typography>
               </Typography>
             )}
           </Box>
@@ -130,34 +184,24 @@ const MatchCard = ({
         <Divider sx={{ my: 1.5 }} />
         <Box display="flex" alignItems="center" mt={1.5}>
           <ScheduleIcon fontSize="small" sx={{ mr: 1, color: 'text.secondary' }} />
-          <Typography variant="body2" color="text.secondary">{formatMatchDate(match.date)}</Typography>
+          <Typography variant="body2" color="text.secondary">{formatMatchDate(displayData.date)}</Typography>
         </Box>
         <Box display="flex" alignItems="center" mt={1}>
           <PlaceIcon fontSize="small" sx={{ mr: 1, color: 'text.secondary' }} />
-          <Typography variant="body2" color="text.secondary">{getVenueName(match.venue)}</Typography>
+          <Typography variant="body2" color="text.secondary">{getVenueName(displayData.venue)}</Typography>
         </Box>
-        {match.matchType && (
+        {displayData.matchType && (
           <Box display="flex" alignItems="center" mt={1}>
             <SportsCricketIcon fontSize="small" sx={{ mr: 1, color: 'text.secondary' }} />
-            <Typography variant="body2" color="text.secondary">{match.matchType} ({match.overs} overs)</Typography>
-          </Box>
-        )}
-        {match.status === 'live' && match.score?.team1 && (
-          <Box mt={2} p={1} bgcolor="rgba(244, 67, 54, 0.1)" borderRadius={1}>
-            <Typography variant="body2" color="error.main" sx={{ fontWeight: 'bold' }}>
-              Score: {match.currentBattingTeam === match.team1Id ? 
-                `${match.score.team1.runs}/${match.score.team1.wickets} (${match.score.team1.overs})` : 
-                `${match.score.team2.runs}/${match.score.team2.wickets} (${match.score.team2.overs})`
-              }
-            </Typography>
+            <Typography variant="body2" color="text.secondary">{displayData.matchType} ({displayData.overs} overs)</Typography>
           </Box>
         )}
       </CardContent>
       <Box sx={{ p: 2, bgcolor: 'background.default', borderTop: theme => `1px solid ${theme.palette.divider}` }}>
-        {match.status === 'live' ? (
+        {matchStatus === 'live' ? (
           <Box sx={{ display: 'flex', gap: 1, justifyContent: 'space-between' }}>
             <Button
-              onClick={() => navigate(`/matches/${match.id}/preview`)}
+              onClick={() => navigate(`/matches/${displayData.id}/preview`)}
               variant="outlined"
               size="small"
               startIcon={<ViewIcon />}
@@ -175,7 +219,7 @@ const MatchCard = ({
               Preview
             </Button>
             <Button
-              onClick={() => navigate(`/matches/${match.id}/live`)}
+              onClick={() => navigate(`/matches/${displayData.id}`)}
               variant="contained"
               color="error"
               size="small"
@@ -192,10 +236,10 @@ const MatchCard = ({
               Watch Live
             </Button>
           </Box>
-        ) : match.status === 'upcoming' ? (
+        ) : matchStatus === 'upcoming' ? (
           <Box sx={{ display: 'flex', gap: 1, justifyContent: 'space-between' }}>
             <Button
-              onClick={() => navigate(`/matches/${match.id}/preview`)}
+              onClick={() => navigate(`/matches/${displayData.id}/preview`)}
               variant="outlined"
               size="small"
               fullWidth
@@ -222,7 +266,7 @@ const MatchCard = ({
         ) : (
           <Box sx={{ display: 'flex', gap: 1, justifyContent: 'space-between' }}>
             <Button
-              onClick={() => navigate(`/matches/${match.id}`)}
+              onClick={() => navigate(`/matches/${displayData.id}`)}
               variant="outlined"
               size="small"
               fullWidth
@@ -250,7 +294,7 @@ const MatchCard = ({
         
         {(userRole === 'organizer' || userRole === 'umpire') && (
           <Box sx={{ display: 'flex', justifyContent: 'center', mt: 1 }}>
-            {match.status === 'upcoming' && (
+            {matchStatus === 'upcoming' && (
               <Button
                 size="small"
                 startIcon={<PlayArrowIcon />}

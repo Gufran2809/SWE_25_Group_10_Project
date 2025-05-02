@@ -15,6 +15,34 @@ import { collection, getDocs, query, orderBy, onSnapshot, where } from 'firebase
 import FilterPanel from './FilterPanel';
 import MatchCard from './MatchCard';
 
+// Add this function after the existing imports
+const getMatchStatus = (match) => {
+  if (!match) return 'upcoming';
+
+  const totalOversTeam1 = parseFloat(match.score?.team1?.overs || '0');
+  const totalOversTeam2 = parseFloat(match.score?.team2?.overs || '0');
+  const maxOvers = match.overs || 20;
+
+  // Match is completed if either:
+  // 1. Both teams completed innings
+  // 2. Second team has won
+  // 3. All wickets down
+  if (
+    (totalOversTeam1 >= maxOvers && totalOversTeam2 >= maxOvers) ||
+    (totalOversTeam2 > 0 && match.score?.team2?.runs > match.score?.team1?.runs) ||
+    (match.score?.team1?.wickets === 10 && match.score?.team2?.wickets === 10)
+  ) {
+    return 'completed';
+  }
+
+  // Match is live if any balls have been bowled
+  if (totalOversTeam1 > 0 || totalOversTeam2 > 0) {
+    return 'live';
+  }
+
+  return 'upcoming';
+};
+
 const Matches = () => {
   const navigate = useNavigate();
   
@@ -97,15 +125,17 @@ const Matches = () => {
   useEffect(() => {
     let filtered = [...matches];
 
-    // Apply tab filters
-    if (tabValue === 1) filtered = filtered.filter(match => match.status === 'live');
-    else if (tabValue === 2) filtered = filtered.filter(match => match.status === 'upcoming');
-    else if (tabValue === 3) filtered = filtered.filter(match => match.status === 'completed');
+    // Apply tab filters based on actual match progress
+    if (tabValue === 1) filtered = filtered.filter(match => getMatchStatus(match) === 'live');
+    else if (tabValue === 2) filtered = filtered.filter(match => getMatchStatus(match) === 'upcoming');
+    else if (tabValue === 3) filtered = filtered.filter(match => getMatchStatus(match) === 'completed');
 
-    // Apply other filters
+    // Apply status filter based on actual match progress
     if (filterStatus !== 'all') {
-      filtered = filtered.filter(match => match.status === filterStatus);
+      filtered = filtered.filter(match => getMatchStatus(match) === filterStatus);
     }
+
+    // Rest of the filters remain the same
     if (filterLeague !== 'all') {
       filtered = filtered.filter(match => match.leagueId === filterLeague);
     }
@@ -121,6 +151,14 @@ const Matches = () => {
       filtered = filtered.filter(match => match.matchType === filterMatchType);
     }
 
+    // Apply date range filter if set
+    if (filterDateRange.start && filterDateRange.end) {
+      filtered = filtered.filter(match => {
+        const matchDate = new Date(match.date);
+        return matchDate >= filterDateRange.start && matchDate <= filterDateRange.end;
+      });
+    }
+
     // Apply search term
     if (searchTerm) {
       const term = searchTerm.toLowerCase();
@@ -131,9 +169,19 @@ const Matches = () => {
       );
     }
 
+    // Sort matches
+    filtered.sort((a, b) => {
+      if (sortOption === 'date') {
+        return sortDirection === 'asc' 
+          ? new Date(a.date) - new Date(b.date)
+          : new Date(b.date) - new Date(a.date);
+      }
+      return 0;
+    });
+
     setFilteredMatches(filtered);
   }, [matches, tabValue, searchTerm, filterStatus, filterLeague, filterVenue, 
-      filterTeam, filterMatchType, filterDateRange]);
+      filterTeam, filterMatchType, filterDateRange, sortOption, sortDirection]);
 
   // Helper functions
   const getTeamName = (teamId) => teams.find(t => t.id === teamId)?.name || 'Unknown Team';

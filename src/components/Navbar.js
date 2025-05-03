@@ -81,12 +81,17 @@ const Navbar = () => {
     setDrawerOpen(open);
   };
 
-  const menuItems = [
+  // Create base menu items
+  const baseMenuItems = [
     { text: 'Home', path: '/', icon: <HomeIcon /> },
     { text: 'Matches', path: '/matches', icon: <SportsCricketIcon /> },
-    { text: 'Tournaments', path: '/leagues', icon: <EmojiEventsIcon /> },
     { text: 'Statistics', path: '/player-stats', icon: <InsightsIcon /> },
   ];
+
+  // Add Tournaments option only for Organizer role
+  const menuItems = user?.role === 'Organizer' 
+    ? [...baseMenuItems, { text: 'Tournaments', path: '/leagues', icon: <EmojiEventsIcon /> }]
+    : baseMenuItems;
 
   const isMenuOpen = Boolean(anchorEl);
 

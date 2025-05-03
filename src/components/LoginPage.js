@@ -148,14 +148,7 @@ const LoginPage = () => {
         navigate('/login', { replace: true });
       } else {
         await signInWithEmailAndPassword(auth, email, password);
-        const userDoc = await getDoc(doc(db, 'users', auth.currentUser.uid));
-        
-        if (!userDoc.exists()) {
-          throw new Error('User profile not found');
-        }
-
-        const userRole = userDoc.data().role;
-        navigate(userRole === 'Organizer' ? '/organizer' : '/', { replace: true });
+        navigate('/', { replace: true });
       }
     } catch (error) {
       let errorMessage = 'An error occurred. Please try again.';
@@ -193,12 +186,8 @@ const LoginPage = () => {
 
   const handleGoogleLogin = async () => {
     try {
-      const result = await login();
-      const userDoc = await getDoc(doc(db, 'users', result.user.uid));
-      
-      if (userDoc.exists()) {
-        navigate('/organizer', { replace: true });
-      }
+      await login();
+      navigate('/', { replace: true });
     } catch (error) {
       console.error('Login error:', error);
       setSnackbar({

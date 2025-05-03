@@ -852,6 +852,30 @@ const Leagues = () => {
       if (!user) throw new Error('You must be signed in');
       setLoading(true);
 
+      // Handle wicket if applicable
+      if (scoringData.wicket) {
+        // Mark batsman as out in players collection
+        const batsmanRef = doc(db, 'players', scoringData.batsmanId);
+        await updateDoc(batsmanRef, {
+          'stats.isOut': true,
+          'stats.lastDismissal': scoringData.wicketType,
+          'stats.lastBowler': scoringData.bowlerId
+        });
+
+        // Reset batsman selection after wicket
+        setScoringData(prev => ({
+          ...prev,
+          batsmanId: '', // Clear out batsman after wicket
+          wicket: false,
+          wicketType: ''
+        }));
+
+        setSnackbar({
+          open: true,
+          message: `Wicket! ${scoringData.wicketType}`
+        });
+      }
+
       // Determine current innings key (team1 or team2)
       const inningsKey = battingTeam === selectedMatch.team1Id ? 'team1' : 'team2';
 
@@ -961,6 +985,63 @@ const Leagues = () => {
     } catch (error) {
       console.error('Error recording ball:', error);
       setSnackbar({ open: true, message: 'Failed to record ball: ' + error.message });
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleEndInnings = async () => {
+    try {
+      setLoading(true);
+      const matchRef = doc(db, 'matches', selectedMatch.id);
+      
+      // If it's first innings
+      if (selectedMatch.battingTeam === selectedMatch.team1Id) {
+        await updateDoc(matchRef, {
+          battingTeam: selectedMatch.team2Id,
+          currentOver: 0,
+          currentBall: 1,
+          currentBatsman: '',
+          currentNonStriker: '',
+          currentBowler: '',
+        });
+        
+        // Reset scoring data for second innings
+        setScoringData({
+          ...scoringData,
+          over: 0,
+          ball: 1,
+          batsmanId: '',
+          nonStrikerId: '',
+          bowlerId: '',
+          runs: 0,
+          extra: '',
+          wicket: false,
+          wicketType: ''
+        });
+        
+        setBattingTeam(selectedMatch.team2Id);
+      } else {
+        // End of match
+        await updateDoc(matchRef, {
+          status: 'Completed',
+          lastUpdated: new Date().toISOString()
+        });
+        setOpenScoringDialog(false);
+      }
+      
+      setSnackbar({
+        open: true,
+        message: selectedMatch.battingTeam === selectedMatch.team1Id ? 
+          'First innings completed!' : 
+          'Match completed!'
+      });
+    } catch (error) {
+      console.error('Error ending innings:', error);
+      setSnackbar({
+        open: true,
+        message: 'Error ending innings'
+      });
     } finally {
       setLoading(false);
     }
@@ -2801,6 +2882,36 @@ const Leagues = () => {
                                 ))}
                             </Select>
                           </FormControl>
+                          {scoringData.wicket && !scoringData.batsmanId && (
+                            <Box sx={{ mt: 2, p: 2, bgcolor: '#ffebee', borderRadius: '8px' }}>
+                              <Typography variant="h6" sx={{ color: '#d32f2f', mb: 2 }}>
+                                Select New Batsman
+                              </Typography>
+                              <FormControl fullWidth>
+                                <InputLabel>New Batsman</InputLabel>
+                                <Select
+                                  value={scoringData.batsmanId}
+                                  onChange={(e) => setScoringData(prev => ({
+                                    ...prev,
+                                    batsmanId: e.target.value
+                                  }))}
+                                  label="New Batsman"
+                                >
+                                  {players
+                                    .filter(p => 
+                                      p.teamId === battingTeam && 
+                                      !p.stats?.isOut &&
+                                      p.id !== scoringData.nonStrikerId
+                                    )
+                                    .map(player => (
+                                      <MenuItem key={player.id} value={player.id}>
+                                        {player.name}
+                                      </MenuItem>
+                                    ))}
+                                </Select>
+                              </FormControl>
+                            </Box>
+                          )}
                         </CardContent>
                       </StyledCard>
                     </Grid>
@@ -2918,10 +3029,14 @@ const Leagues = () => {
                   Cancel
                 </Button>
                 <ActionButton
-                  onClick={() => setOpenScoringDialog(false)} // Placeholder for End Innings
+                  onClick={handleEndInnings}
                   disabled={loading}
                 >
-                  End Innings
+                  {loading ? <CircularProgress size={24} /> : 
+                    selectedMatch?.battingTeam === selectedMatch?.team1Id ? 
+                      'End First Innings' : 
+                      'End Match'
+                  }
                 </ActionButton>
               </DialogActions>
             </Dialog>

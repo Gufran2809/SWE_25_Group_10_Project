@@ -465,19 +465,41 @@ const Home = () => {
   // Update the filteredMatches function
   const filteredMatches = () => {
     if (tabValue === 0) {
-      // Live matches - check if balls have been bowled
+      // Live matches - only show matches where at least one ball has been bowled
       return matches
-        .filter(match => getMatchStatus(match) === 'live')
+        .filter(match => {
+          const totalOversTeam1 = parseFloat(match.score?.team1?.overs || '0');
+          const totalOversTeam2 = parseFloat(match.score?.team2?.overs || '0');
+          // Match is live if any balls have been bowled
+          return (totalOversTeam1 > 0 || totalOversTeam2 > 0);
+        })
         .sort((a, b) => new Date(b.matchDate) - new Date(a.matchDate));
     }
     if (tabValue === 1) {
+      // Upcoming matches - show matches where no balls have been bowled yet
       return matches
-        .filter(match => getMatchStatus(match) === 'upcoming')
+        .filter(match => {
+          const totalOversTeam1 = parseFloat(match.score?.team1?.overs || '0');
+          const totalOversTeam2 = parseFloat(match.score?.team2?.overs || '0');
+          // Match is upcoming if no balls have been bowled
+          return totalOversTeam1 === 0 && totalOversTeam2 === 0;
+        })
         .sort((a, b) => new Date(a.matchDate) - new Date(b.matchDate));
     }
     if (tabValue === 2) {
+      // Completed matches - show matches where either all overs are bowled or second innings target is achieved
       return matches
-        .filter(match => getMatchStatus(match) === 'completed')
+        .filter(match => {
+          const totalOversTeam1 = parseFloat(match.score?.team1?.overs || '0');
+          const totalOversTeam2 = parseFloat(match.score?.team2?.overs || '0');
+          const maxOvers = match.overs || 20;
+
+          return (
+            (totalOversTeam1 >= maxOvers && totalOversTeam2 >= maxOvers) || // All overs completed
+            (totalOversTeam2 > 0 && match.score?.team2?.runs > match.score?.team1?.runs) || // Second team won
+            (match.score?.team1?.wickets === 10 && match.score?.team2?.wickets === 10) // All out
+          );
+        })
         .sort((a, b) => new Date(b.matchDate) - new Date(a.matchDate));
     }
     return matches;

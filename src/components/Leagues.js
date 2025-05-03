@@ -201,7 +201,7 @@ const Leagues = () => {
     description: '',
     thumbnail: null,
   });
-  const [newTeam, setNewTeam] = useState({ name: '', logo: null, captainId: '', wicketKeeperId: '' });
+  const [newTeam, setNewTeam] = useState({ name: '', logo: null });
   const [selectedTeams, setSelectedTeams] = useState([]);
   const [selectedTeamId, setSelectedTeamId] = useState('');
   const [playerFormData, setPlayerFormData] = useState({
@@ -450,13 +450,16 @@ const Leagues = () => {
 
   const handleTeamDialogClose = () => {
     setOpenTeamDialog(false);
-    setNewTeam({ name: '', logo: null, captainId: '', wicketKeeperId: '' });
+    setNewTeam({ name: '', logo: null });
     setSelectedTeams([]);
   };
 
   const handleTeamChange = (e) => {
-    const { name, value, files } = e.target;
-    setNewTeam({ ...newTeam, [name]: files ? files[0] : value });
+    const { name, files } = e.target;
+    setNewTeam({ 
+      ...newTeam, 
+      [name]: files ? files[0] : e.target.value 
+    });
   };
 
   const handleAddTeam = async () => {
@@ -475,14 +478,12 @@ const Leagues = () => {
         name: newTeam.name,
         leagueId: selectedLeague.id,
         logo: logoUrl,
-        captainId: newTeam.captainId,
-        wicketKeeperId: newTeam.wicketKeeperId,
         playerIds: [],
         stats: { matches: 0, wins: 0, losses: 0 },
       };
       await setDoc(doc(db, 'teams', teamId), newTeamData);
       setSelectedTeams([...selectedTeams, teamId]);
-      setNewTeam({ name: '', logo: null, captainId: '', wicketKeeperId: '' });
+      setNewTeam({ name: '', logo: null });
       setSnackbar({ open: true, message: 'Team added successfully!' });
     } catch (error) {
       handleError(error, 'Failed to add team');
@@ -2461,42 +2462,6 @@ const Leagues = () => {
                       </Typography>
                     )}
                   </Box>
-                  <FormControl fullWidth margin="normal">
-                    <InputLabel sx={{ color: '#1b5e20' }}>Captain</InputLabel>
-                    <Select
-                      name="captainId"
-                      value={newTeam.captainId}
-                      onChange={handleTeamChange}
-                      label="Captain"
-                      sx={{ bgcolor: '#ffffff', borderRadius: '8px' }}
-                    >
-                      {players
-                        .filter((p) => p.teamId === selectedTeamId || !p.teamId)
-                        .map((player) => (
-                          <MenuItem key={player.id} value={player.id}>
-                            {player.name}
-                          </MenuItem>
-                        ))}
-                    </Select>
-                  </FormControl>
-                  <FormControl fullWidth margin="normal">
-                    <InputLabel sx={{ color: '#1b5e20' }}>Wicket Keeper</InputLabel>
-                    <Select
-                      name="wicketKeeperId"
-                      value={newTeam.wicketKeeperId}
-                      onChange={handleTeamChange}
-                      label="Wicket Keeper"
-                      sx={{ bgcolor: '#ffffff', borderRadius: '8px' }}
-                    >
-                      {players
-                        .filter((p) => p.teamId === selectedTeamId || !p.teamId)
-                        .map((player) => (
-                          <MenuItem key={player.id} value={player.id}>
-                            {player.name}
-                          </MenuItem>
-                        ))}
-                    </Select>
-                  </FormControl>
                   <ActionButton
                     onClick={handleAddTeam}
                     disabled={loading || !newTeam.name}

@@ -165,6 +165,13 @@ const commentaryTemplates = {
   century: ['Century! What an innings!', 'Hundred up, take a bow!'],
 };
 
+// Add this validation function at the top of your component
+const isValidDateRange = (startDate, endDate) => {
+  const start = new Date(startDate);
+  const end = new Date(endDate);
+  return start <= end;
+};
+
 const Leagues = () => {
   const [leagues, setLeagues] = useState([]);
   const [teams, setTeams] = useState([]);
@@ -245,6 +252,17 @@ const Leagues = () => {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [availablePlayers, setAvailablePlayers] = useState([]);
   const [battingTeam, setBattingTeam] = useState(null);
+
+  const [openEditMatchDialog, setOpenEditMatchDialog] = useState(false);
+  const [openRescheduleDialog, setOpenRescheduleDialog] = useState(false);
+  const [editMatchData, setEditMatchData] = useState(null);
+  const [rescheduleData, setRescheduleData] = useState({
+    action: '',
+    description: '',
+    newDate: '',
+    newTime: '',
+    newVenue: ''
+  });
 
   // Monitor authentication state
   useEffect(() => {
@@ -376,6 +394,17 @@ const Leagues = () => {
   const handleCreateLeague = async () => {
     try {
       if (!user) throw new Error('You must be signed in');
+      
+      // Add date validation
+      if (!isValidDateRange(newLeague.startDate, newLeague.endDate)) {
+        setSnackbar({
+          open: true,
+          message: 'End date cannot be earlier than start date',
+          severity: 'error'
+        });
+        return;
+      }
+
       setLoading(true);
       const leagueId = `league-${Date.now()}`;
       let thumbnailUrl = '';
@@ -618,6 +647,21 @@ const Leagues = () => {
   const handleCreateMatch = async () => {
     try {
       if (!user) throw new Error('You must be signed in');
+
+      // Add date validation against league dates
+      const matchDate = new Date(`${matchFormData.matchDate}T${matchFormData.matchTime}`);
+      const leagueStartDate = new Date(selectedLeague.startDate);
+      const leagueEndDate = new Date(selectedLeague.endDate);
+
+      if (matchDate < leagueStartDate || matchDate > leagueEndDate) {
+        setSnackbar({
+          open: true,
+          message: 'Match date must be within league start and end dates',
+          severity: 'error'
+        });
+        return;
+      }
+
       setLoading(true);
       const matchId = `match-${Date.now()}`;
       const matchDateTime = new Date(`${matchFormData.matchDate}T${matchFormData.matchTime}`);
@@ -1340,6 +1384,74 @@ const Leagues = () => {
     }
   };
 
+  const handleEditMatch = async (match) => {
+    try {
+      setLoading(true);
+      const matchRef = doc(db, 'matches', match.id);
+      await updateDoc(matchRef, {
+        matchDate: editMatchData.matchDate,
+        matchTime: editMatchData.matchTime,
+        venue: editMatchData.venue,
+        matchType: editMatchData.matchType,
+        overs: parseInt(editMatchData.overs),
+        umpireId: editMatchData.umpireId,
+        lastUpdated: new Date().toISOString()
+      });
+
+      setSnackbar({
+        open: true,
+        message: 'Match details updated successfully!'
+      });
+      setOpenEditMatchDialog(false);
+    } catch (error) {
+      console.error('Error updating match:', error);
+      setSnackbar({
+        open: true,
+        message: 'Failed to update match details'
+      });
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleRescheduleMatch = async (match) => {
+    try {
+      setLoading(true);
+      const matchRef = doc(db, 'matches', match.id);
+      
+      if (rescheduleData.action === 'cancel') {
+        await updateDoc(matchRef, {
+          status: 'Cancelled',
+          cancellationReason: rescheduleData.description || 'No reason provided',
+          lastUpdated: new Date().toISOString()
+        });
+      } else {
+        await updateDoc(matchRef, {
+          matchDate: rescheduleData.newDate,
+          matchTime: rescheduleData.newTime,
+          venue: rescheduleData.newVenue,
+          status: 'Rescheduled',
+          rescheduledReason: rescheduleData.description || 'No reason provided',
+          lastUpdated: new Date().toISOString()
+        });
+      }
+
+      setSnackbar({
+        open: true,
+        message: `Match ${rescheduleData.action === 'cancel' ? 'cancelled' : 'rescheduled'} successfully!`
+      });
+      setOpenRescheduleDialog(false);
+    } catch (error) {
+      console.error('Error updating match:', error);
+      setSnackbar({
+        open: true,
+        message: `Failed to ${rescheduleData.action} match`
+      });
+    } finally {
+      setLoading(false);
+    }
+  };
+
   useEffect(() => {
     if (selectedLeague && tabValue === 4) {
       fetchPointsTableData(selectedLeague.id);
@@ -1730,34 +1842,79 @@ const Leagues = () => {
                           Schedule Match
                         </ActionButton>
                         <List>
-                          {loading
-                            ? [...Array(4)].map((_, index) => (
-                                <ListItem key={index}>
-                                  <Skeleton variant="rectangular" width="100%" height={60} sx={{ borderRadius: '8px' }} />
-                                </ListItem>
-                              ))
-                            : matches
-                                .filter((m) => selectedLeague && m.leagueId === selectedLeague.id)
-                                .map((match) => (
-                                  <ListItem
-                                    key={match.id}
-                                    sx={{
-                                      bgcolor: match.status === 'Live' ? '#ffebee' : '#ffffff',
-                                      mb: 1,
-                                      borderRadius: '8px',
-                                      boxShadow: '0 2px 4px rgba(0,0,0,0.1)',
-                                    }}
-                                  >
-                                    <ListItemText
-                                      primary={`${teams.find((t) => t.id === match.team1Id)?.name} vs ${teams.find((t) => t.id === match.team2Id)?.name}`}
-                                      secondary={`Date: ${match.matchDate}, Time: ${match.matchTime}, Venue: ${match.venue}, Status: ${match.status}`}
-                                      primaryTypographyProps={{ color: '#1b5e20', fontWeight: 'bold' }}
-                                      secondaryTypographyProps={{ color: '#424242' }}
-                                    />
-                                    {match.status !== 'Completed' && (
+                          {loading ? (
+                            [...Array(4)].map((_, index) => (
+                              <ListItem key={index}>
+                                <Skeleton variant="rectangular" width="100%" height={60} sx={{ borderRadius: '8px' }} />
+                              </ListItem>
+                            ))
+                          ) : (
+                            matches
+                              .filter((m) => selectedLeague && m.leagueId === selectedLeague.id)
+                              .map((match) => (
+                                <ListItem
+                                  key={match.id}
+                                  sx={{
+                                    bgcolor: match.status === 'Live' ? '#ffebee' : '#ffffff',
+                                    mb: 1,
+                                    borderRadius: '8px',
+                                    boxShadow: '0 2px 4px rgba(0,0,0,0.1)',
+                                  }}
+                                >
+                                  <ListItemText
+                                    primary={`${teams.find((t) => t.id === match.team1Id)?.name} vs ${teams.find((t) => t.id === match.team2Id)?.name}`}
+                                    secondary={
+                                      <>
+                                        <Typography component="span" variant="body2">
+                                          Date: {match.matchDate}, Time: {match.matchTime}
+                                        </Typography>
+                                        <br />
+                                        <Typography component="span" variant="body2">
+                                          Venue: {match.venue}
+                                        </Typography>
+                                        <br />
+                                        <Typography component="span" variant="body2" color="error">
+                                          Status: {match.status}
+                                          {match.rescheduledReason && ` (${match.rescheduledReason})`}
+                                          {match.cancellationReason && ` (${match.cancellationReason})`}
+                                        </Typography>
+                                      </>
+                                    }
+                                  />
+                                  <Box sx={{ display: 'flex', gap: 1 }}>
+                                    <Button
+                                      variant="outlined"
+                                      onClick={() => {
+                                        setEditMatchData(match);
+                                        setOpenEditMatchDialog(true);
+                                      }}
+                                      disabled={match.status === 'Completed' || match.status === 'Cancelled'}
+                                      sx={{ color: '#1b5e20', borderColor: '#1b5e20' }}
+                                    >
+                                      Edit
+                                    </Button>
+                                    <Button
+                                      variant="outlined"
+                                      onClick={() => {
+                                        setEditMatchData(match);
+                                        setRescheduleData({
+                                          action: '',
+                                          description: '',
+                                          newDate: match.matchDate,
+                                          newTime: match.matchTime,
+                                          newVenue: match.venue
+                                        });
+                                        setOpenRescheduleDialog(true);
+                                      }}
+                                      disabled={match.status === 'Completed' || match.status === 'Cancelled'}
+                                      sx={{ color: '#d32f2f', borderColor: '#d32f2f' }}
+                                    >
+                                      Reschedule/Cancel
+                                    </Button>
+                                    {match.status !== 'Completed' && match.status !== 'Cancelled' && (
                                       <ActionButton
                                         onClick={() => handleScoringDialogOpen(match)}
-                                        sx={{ ml: 2, bgcolor: '#d32f2f', '&:hover': { bgcolor: '#b71c1c' } }}
+                                        sx={{ bgcolor: '#d32f2f', '&:hover': { bgcolor: '#b71c1c' } }}
                                       >
                                         Start Scoring
                                       </ActionButton>
@@ -1765,12 +1922,14 @@ const Leagues = () => {
                                     <Button
                                       variant="outlined"
                                       onClick={() => exportScorecard(match)}
-                                      sx={{ ml: 2, color: '#1b5e20', borderColor: '#1b5e20' }}
+                                      sx={{ color: '#1b5e20', borderColor: '#1b5e20' }}
                                     >
                                       Export Scorecard
                                     </Button>
-                                  </ListItem>
-                                ))}
+                                  </Box>
+                                </ListItem>
+                              ))
+                          )}
                         </List>
                       </Grid>
                     </Grid>
@@ -2054,6 +2213,12 @@ const Leagues = () => {
                 margin="normal"
                 InputLabelProps={{ shrink: true }}
                 required
+                error={newLeague.endDate && !isValidDateRange(newLeague.startDate, newLeague.endDate)}
+                helperText={
+                  newLeague.endDate && 
+                  !isValidDateRange(newLeague.startDate, newLeague.endDate) && 
+                  'Start date must be before end date'
+                }
                 sx={{ bgcolor: '#ffffff', borderRadius: '8px' }}
               />
               <TextField
@@ -2066,6 +2231,12 @@ const Leagues = () => {
                 margin="normal"
                 InputLabelProps={{ shrink: true }}
                 required
+                error={newLeague.startDate && !isValidDateRange(newLeague.startDate, newLeague.endDate)}
+                helperText={
+                  newLeague.startDate && 
+                  !isValidDateRange(newLeague.startDate, newLeague.endDate) && 
+                  'End date cannot be earlier than start date'
+                }
                 sx={{ bgcolor: '#ffffff', borderRadius: '8px' }}
               />
               <FormControl fullWidth margin="normal">
@@ -2454,6 +2625,16 @@ const Leagues = () => {
                   margin="normal"
                   InputLabelProps={{ shrink: true }}
                   required
+                  error={matchFormData.matchDate && (
+                    new Date(`${matchFormData.matchDate}T${matchFormData.matchTime}`) < new Date(selectedLeague.startDate) ||
+                    new Date(`${matchFormData.matchDate}T${matchFormData.matchTime}`) > new Date(selectedLeague.endDate)
+                  )}
+                  helperText={
+                    matchFormData.matchDate && (
+                      new Date(`${matchFormData.matchDate}T${matchFormData.matchTime}`) < new Date(selectedLeague.startDate) ||
+                      new Date(`${matchFormData.matchDate}T${matchFormData.matchTime}`) > new Date(selectedLeague.endDate)
+                    ) && 'Match date must be within league dates'
+                  }
                   sx={{ bgcolor: '#ffffff', borderRadius: '8px' }}
                 />
                 <TextField
@@ -3002,6 +3183,136 @@ const Leagues = () => {
                   disabled={loading || !streamConfig.serverUrl || !streamConfig.streamKey}
                 >
                   {loading ? <CircularProgress size={24} color="inherit" /> : 'Start Stream'}
+                </ActionButton>
+              </DialogActions>
+            </Dialog>
+
+            {/* Edit Match Dialog */}
+            <Dialog open={openEditMatchDialog} onClose={() => setOpenEditMatchDialog(false)} maxWidth="sm" fullWidth>
+              <DialogTitle sx={{ bgcolor: '#1b5e20', color: '#ffffff' }}>
+                Edit Match Details
+              </DialogTitle>
+              <DialogContent sx={{ bgcolor: '#f5f5f5', mt: 2 }}>
+                {editMatchData && (
+                  <>
+                    <TextField
+                      label="Match Date"
+                      type="date"
+                      value={editMatchData.matchDate}
+                      onChange={(e) => setEditMatchData({ ...editMatchData, matchDate: e.target.value })}
+                      fullWidth
+                      margin="normal"
+                      InputLabelProps={{ shrink: true }}
+                      sx={{ bgcolor: '#ffffff', borderRadius: '8px' }}
+                    />
+                    <TextField
+                      label="Match Time"
+                      type="time"
+                      value={editMatchData.matchTime}
+                      onChange={(e) => setEditMatchData({ ...editMatchData, matchTime: e.target.value })}
+                      fullWidth
+                      margin="normal"
+                      InputLabelProps={{ shrink: true }}
+                      sx={{ bgcolor: '#ffffff', borderRadius: '8px' }}
+                    />
+                    <TextField
+                      label="Venue"
+                      value={editMatchData.venue}
+                      onChange={(e) => setEditMatchData({ ...editMatchData, venue: e.target.value })}
+                      fullWidth
+                      margin="normal"
+                      sx={{ bgcolor: '#ffffff', borderRadius: '8px' }}
+                    />
+                    <TextField
+                      label="Overs"
+                      type="number"
+                      value={editMatchData.overs}
+                      onChange={(e) => setEditMatchData({ ...editMatchData, overs: e.target.value })}
+                      fullWidth
+                      margin="normal"
+                      sx={{ bgcolor: '#ffffff', borderRadius: '8px' }}
+                    />
+                  </>
+                )}
+              </DialogContent>
+              <DialogActions sx={{ bgcolor: '#f5f5f5', p: 2 }}>
+                <Button onClick={() => setOpenEditMatchDialog(false)}>Discard</Button>
+                <ActionButton onClick={() => handleEditMatch(editMatchData)} disabled={loading}>
+                  {loading ? <CircularProgress size={24} /> : 'Save Changes'}
+                </ActionButton>
+              </DialogActions>
+            </Dialog>
+
+            {/* Reschedule/Cancel Match Dialog */}
+            <Dialog open={openRescheduleDialog} onClose={() => setOpenRescheduleDialog(false)} maxWidth="sm" fullWidth>
+              <DialogTitle sx={{ bgcolor: '#1b5e20', color: '#ffffff' }}>
+                Reschedule or Cancel Match
+              </DialogTitle>
+              <DialogContent sx={{ bgcolor: '#f5f5f5', mt: 2 }}>
+                <FormControl fullWidth margin="normal">
+                  <InputLabel>Action</InputLabel>
+                  <Select
+                    value={rescheduleData.action}
+                    onChange={(e) => setRescheduleData({ ...rescheduleData, action: e.target.value })}
+                    label="Action"
+                    sx={{ bgcolor: '#ffffff', borderRadius: '8px' }}
+                  >
+                    <MenuItem value="reschedule">Reschedule Match</MenuItem>
+                    <MenuItem value="cancel">Cancel Match</MenuItem>
+                  </Select>
+                </FormControl>
+                
+                <TextField
+                  label="Reason"
+                  value={rescheduleData.description}
+                  onChange={(e) => setRescheduleData({ ...rescheduleData, description: e.target.value })}
+                  fullWidth
+                  margin="normal"
+                  multiline
+                  rows={3}
+                  sx={{ bgcolor: '#ffffff', borderRadius: '8px' }}
+                />
+                
+                {rescheduleData.action === 'reschedule' && (
+                  <>
+                    <TextField
+                      label="New Date"
+                      type="date"
+                      value={rescheduleData.newDate}
+                      onChange={(e) => setRescheduleData({ ...rescheduleData, newDate: e.target.value })}
+                      fullWidth
+                      margin="normal"
+                      InputLabelProps={{ shrink: true }}
+                      sx={{ bgcolor: '#ffffff', borderRadius: '8px' }}
+                    />
+                    <TextField
+                      label="New Time"
+                      type="time"
+                      value={rescheduleData.newTime}
+                      onChange={(e) => setRescheduleData({ ...rescheduleData, newTime: e.target.value })}
+                      fullWidth
+                      margin="normal"
+                      InputLabelProps={{ shrink: true }}
+                      sx={{ bgcolor: '#ffffff', borderRadius: '8px' }}
+                    />
+                    <TextField
+                      label="New Venue"
+                      value={rescheduleData.newVenue}
+                      onChange={(e) => setRescheduleData({ ...rescheduleData, newVenue: e.target.value })}
+                      fullWidth
+                      margin="normal"
+                      sx={{ bgcolor: '#ffffff', borderRadius: '8px' }}
+                    />
+                  </>
+                )}
+              </DialogContent>
+              <DialogActions sx={{ bgcolor: '#f5f5f5', p: 2 }}>
+                <Button onClick={() => setOpenRescheduleDialog(false)}>Discard</Button>
+                <ActionButton 
+                  onClick={() => handleRescheduleMatch(editMatchData)} 
+                  disabled={loading || !rescheduleData.action}
+                >
+                  {loading ? <CircularProgress size={24} /> : 'Submit'}
                 </ActionButton>
               </DialogActions>
             </Dialog>

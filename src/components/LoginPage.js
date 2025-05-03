@@ -22,10 +22,12 @@ import {
   Divider,
   Alert,
   IconButton,
-  styled
+  styled,
+  InputAdornment
 } from '@mui/material';
 import GoogleIcon from '@mui/icons-material/Google';
 import SportsCricketIcon from '@mui/icons-material/SportsCricket';
+import { Visibility, VisibilityOff } from '@mui/icons-material';
 
 // Styled Components
 const StyledPaper = styled(Paper)(({ theme }) => ({
@@ -69,13 +71,21 @@ const LoginPage = () => {
   const [role, setRole] = useState('Player');
   const [isSignup, setIsSignup] = useState(false);
   const [snackbar, setSnackbar] = useState({ open: false, message: '', severity: 'error' });
+  const [showPassword, setShowPassword] = useState(false);
+  const [loading, setLoading] = useState(false);
   const navigate = useNavigate();
 
   const handleEmailAuth = async (e) => {
     e.preventDefault();
     setSnackbar({ open: false, message: '', severity: 'error' });
+    setLoading(true);
+
     try {
       if (isSignup) {
+        if (password.length < 6) {
+          throw new Error('Password should be at least 6 characters long');
+        }
+
         const userCredential = await createUserWithEmailAndPassword(auth, email, password);
         const newUser = userCredential.user;
         
@@ -139,15 +149,45 @@ const LoginPage = () => {
       } else {
         await signInWithEmailAndPassword(auth, email, password);
         const userDoc = await getDoc(doc(db, 'users', auth.currentUser.uid));
-        const userRole = userDoc.exists() ? userDoc.data().role : 'Organizer'; // Default to Organizer
+        
+        if (!userDoc.exists()) {
+          throw new Error('User profile not found');
+        }
+
+        const userRole = userDoc.data().role;
         navigate(userRole === 'Organizer' ? '/organizer' : '/', { replace: true });
       }
     } catch (error) {
+      let errorMessage = 'An error occurred. Please try again.';
+      
+      // Handle specific Firebase errors
+      switch (error.code) {
+        case 'auth/email-already-in-use':
+          errorMessage = 'This email is already registered';
+          break;
+        case 'auth/invalid-email':
+          errorMessage = 'Invalid email address';
+          break;
+        case 'auth/wrong-password':
+          errorMessage = 'Incorrect password';
+          break;
+        case 'auth/user-not-found':
+          errorMessage = 'No account found with this email';
+          break;
+        case 'auth/too-many-requests':
+          errorMessage = 'Too many attempts. Please try again later';
+          break;
+        default:
+          errorMessage = error.message;
+      }
+
       setSnackbar({
         open: true,
-        message: error.message,
+        message: errorMessage,
         severity: 'error',
       });
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -206,12 +246,25 @@ const LoginPage = () => {
 
             <TextField
               fullWidth
-              type="password"
+              type={showPassword ? 'text' : 'password'}
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               placeholder="Password"
               required
               variant="outlined"
+              InputProps={{
+                endAdornment: (
+                  <InputAdornment position="end">
+                    <IconButton
+                      onClick={() => setShowPassword(!showPassword)}
+                      edge="end"
+                      sx={{ color: 'rgba(255, 255, 255, 0.7)' }}
+                    >
+                      {showPassword ? <VisibilityOff /> : <Visibility />}
+                    </IconButton>
+                  </InputAdornment>
+                ),
+              }}
               sx={{
                 mb: 2,
                 '& .MuiOutlinedInput-root': {

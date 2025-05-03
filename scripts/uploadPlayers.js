@@ -14,291 +14,159 @@ const firebaseConfig = {
 const app = initializeApp(firebaseConfig);
 const db = getFirestore(app);
 
-export const samplePlayers = [
-    {
-      id: 'p1',
-      name: 'Rohit Sharma',
-      team: 'Engineering Titans',
-      role: 'batsman',
-      jerseyNumber: 7,
-      profileImage: '/images/players/rohit.jpg',
+const playerNames = [
+  'Rohit Sharma', 'Virat Kohli', 'KL Rahul', 'Shubman Gill', 'Shreyas Iyer',
+  'Rishabh Pant', 'Hardik Pandya', 'Ravindra Jadeja', 'Mohammed Shami', 'Jasprit Bumrah',
+  'Ajinkya Rahane', 'Cheteshwar Pujara', 'Suryakumar Yadav', 'Ishan Kishan', 'Axar Patel',
+  'Yuzvendra Chahal', 'Kuldeep Yadav', 'Mohammed Siraj', 'Shardul Thakur', 'Washington Sundar',
+  'Deepak Chahar', 'Bhuvneshwar Kumar', 'T Natarajan', 'Navdeep Saini', 'Prasidh Krishna',
+  'Mayank Agarwal', 'Prithvi Shaw', 'Hanuma Vihari', 'Abhimanyu Easwaran', 'Ruturaj Gaikwad',
+  'Devdutt Padikkal', 'Yashasvi Jaiswal', 'Karun Nair', 'Manish Pandey', 'Sanju Samson',
+  'Nitish Rana', 'Rahul Tripathi', 'Venkatesh Iyer', 'Deepak Hooda', 'Krunal Pandya',
+  'Ravi Bishnoi', 'Rahul Chahar', 'Varun Chakravarthy', 'Avesh Khan', 'Arshdeep Singh',
+  'Umran Malik', 'Kartik Tyagi', 'Chetan Sakariya', 'Mukesh Kumar', 'Akash Deep',
+  'Rinku Singh', 'Tilak Varma', 'Jitesh Sharma', 'Dhruv Jurel', 'Prabhsimran Singh',
+  'Riyan Parag', 'Shivam Mavi', 'Ravi Teja', 'Mohit Sharma', 'Yash Dayal',
+  'Tushar Deshpande', 'Matheesha Pathirana', 'Akash Singh', 'Raj Bawa', 'Kumar Kartikeya',
+  'Shams Mulani', 'Tanush Kotian', 'Atit Sheth', 'Chintan Gaja', 'Yash Thakur',
+  'Harshit Rana', 'Akash Madhwal', 'Vijaykumar Vyshak', 'Mayank Yadav', 'Rasikh Salam',
+  'Abhishek Sharma', 'Shashank Singh', 'Priyam Garg', 'Rajat Patidar', 'Anuj Rawat',
+  'Mahipal Lomror', 'Shubham Dubey', 'Vishnu Vinod', 'Anmolpreet Singh', 'Sarfaraz Khan',
+  'Mandeep Singh', 'Himanshu Rana', 'Vivrant Sharma', 'Samarth Vyas', 'Shivalik Sharma',
+  'Dhruv Shorey', 'Baba Indrajith', 'Nikin Jose', 'Rohan Kunnummal', 'Pukhraj Mann',
+  'Akshay Wadkar', 'Urvil Patel', 'Aryan Juyal', 'Luvnith Sisodia', 'Arun Karthik',
+  'Eknath Kerkar', 'Upendra Yadav', 'Kumar Kushagra', 'Prashant Solanki', 'Shiva Singh'
+];
+
+const teams = [
+  'Engineering Titans', 'Science Strikers', 'Management Masters', 
+  'Arts Avengers', 'Commerce Kings', 'Medical Mavericks',
+  'Law Lords', 'Physics Panthers', 'Chemistry Champions', 'Mathematics Maestros'
+];
+
+const roles = ['batsman', 'bowler', 'all-rounder', 'wicketkeeper'];
+
+const generateBattingStats = (skill = 'medium') => {
+  const multiplier = skill === 'high' ? 1.3 : skill === 'low' ? 0.7 : 1;
+  const runs = Math.floor(Math.random() * 500 + 300) * multiplier;
+  const innings = Math.floor(Math.random() * 15 + 10);
+  const notOuts = Math.floor(Math.random() * 5);
+  const ballsFaced = Math.floor(Math.random() * 200 + 150);
+  
+  return {
+    innings,
+    runs: Math.floor(runs),
+    notOuts,
+    highest: Math.floor(Math.random() * 100 + 50),
+    average: ((runs / (innings - notOuts)) || 0).toFixed(2),
+    strikeRate: ((runs / ballsFaced) * 100).toFixed(2),
+    fifties: Math.floor(Math.random() * 5),
+    hundreds: Math.floor(Math.random() * 2),
+    fours: Math.floor(Math.random() * 50 + 20),
+    sixes: Math.floor(Math.random() * 20 + 5),
+    lastFiveScores: Array(5).fill(0).map(() => Math.floor(Math.random() * 80 + 20)),
+    ballsFaced,
+    isOut: false
+  };
+};
+
+const generateBowlingStats = (skill = 'medium') => {
+  const multiplier = skill === 'high' ? 1.3 : skill === 'low' ? 0.7 : 1;
+  const wickets = Math.floor(Math.random() * 25 + 15) * multiplier;
+  const runs = Math.floor(Math.random() * 300 + 200);
+  const overs = parseFloat((Math.random() * 50 + 30).toFixed(1));
+  
+  return {
+    innings: Math.floor(Math.random() * 15 + 10),
+    overs,
+    wickets: Math.floor(wickets),
+    runs,
+    average: (runs / wickets).toFixed(2),
+    economy: (runs / overs).toFixed(2),
+    bestBowling: `${Math.floor(Math.random() * 5 + 2)}/${Math.floor(Math.random() * 20 + 10)}`,
+    fiveWickets: Math.floor(Math.random() * 2)
+  };
+};
+
+const generatePlayersArray = () => {
+  return playerNames.map((name, index) => {
+    const role = roles[Math.floor(Math.random() * roles.length)];
+    const matches = Math.floor(Math.random() * 20 + 15);
+    
+    const player = {
+      id: `p${index + 1}`,
+      name,
+      team: teams[Math.floor(Math.random() * teams.length)],
+      role,
+      jerseyNumber: Math.floor(Math.random() * 99) + 1,
+      profileImage: `/images/players/${name.toLowerCase().replace(' ', '')}.jpg`,
+      isCaptain: Math.random() < 0.1, // 10% chance of being captain
+      isWicketKeeper: Math.random() < 0.15, // 15% chance of being wicketkeeper
       stats: {
         overall: {
-          matches: 24,
-          batting: {
-            innings: 24,
-            runs: 892,
-            notOuts: 4,
-            highest: 145,
-            average: 44.60,
-            strikeRate: 152.3,
-            fifties: 6,
-            hundreds: 2,
-            fours: 78,
-            sixes: 42,
-            lastFiveScores: [85, 45, 67, 32, 89]
-          }
+          matches
         }
       },
-      achievements: ['Fastest 150 in University Cricket', 'Best Batsman 2023']
-    },
-    {
-      id: 'p2',
-      name: 'Anil Kumar',
-      team: 'Science Strikers',
-      role: 'bowler',
-      jerseyNumber: 11,
-      profileImage: '/images/players/anil.jpg',
-      stats: {
-        overall: {
-          matches: 22,
-          bowling: {
-            innings: 22,
-            overs: 82.4,
-            wickets: 34,
-            runs: 412,
-            average: 12.11,
-            economy: 5.02,
-            bestBowling: '6/23',
-            fiveWickets: 2,
-            lastFiveSpells: [
-              { wickets: 3, runs: 24 },
-              { wickets: 2, runs: 18 },
-              { wickets: 4, runs: 22 },
-              { wickets: 1, runs: 19 },
-              { wickets: 3, runs: 25 }
-            ]
-          }
+      achievements: []
+    };
+
+    // Current match stats (if playing)
+    player.stats.ballsFaced = 0;
+    player.stats.runs = 0;
+    player.stats.isOut = false;
+    player.stats.fours = 0;
+    player.stats.sixes = 0;
+    player.stats.strikeRate = "0.00";
+
+    switch (role) {
+      case 'batsman':
+        player.stats.overall.batting = generateBattingStats('high');
+        if (parseFloat(player.stats.overall.batting.average) > 40) {
+          player.achievements.push('High Performance Batsman 2023');
         }
-      },
-      achievements: ['Best Bowler 2023', 'Hat-trick Hero']
-    },
-    {
-      id: 'p3',
-      name: 'Rahul Dev',
-      team: 'Management Masters',
-      role: 'all-rounder',
-      jerseyNumber: 23,
-      profileImage: '/images/players/rahul.jpg',
-      stats: {
-        overall: {
-          matches: 20,
-          batting: {
-            innings: 18,
-            runs: 456,
-            notOuts: 3,
-            highest: 82,
-            average: 30.40,
-            strikeRate: 128.5,
-            fifties: 3,
-            hundreds: 0,
-            lastFiveScores: [45, 23, 82, 34, 56]
-          },
-          bowling: {
-            innings: 20,
-            overs: 76.0,
-            wickets: 28,
-            runs: 378,
-            average: 13.50,
-            economy: 4.97,
-            bestBowling: '4/22'
-          }
+        if (player.stats.overall.batting.hundreds > 0) {
+          player.achievements.push('Century Maker');
         }
-      },
-      achievements: ['Best All-rounder 2023']
-    },
-    {
-      id: 'p4',
-      name: 'Vikas Singh',
-      team: 'Arts Avengers',
-      role: 'batsman',
-      jerseyNumber: 45,
-      profileImage: '/images/players/vikas.jpg',
-      stats: {
-        overall: {
-          matches: 18,
-          batting: {
-            innings: 18,
-            runs: 634,
-            notOuts: 2,
-            highest: 96,
-            average: 39.62,
-            strikeRate: 142.8,
-            fifties: 5,
-            hundreds: 0,
-            lastFiveScores: [96, 45, 23, 67, 42]
-          }
+        break;
+
+      case 'bowler':
+        player.stats.overall.bowling = generateBowlingStats('high');
+        if (player.stats.overall.bowling.wickets > 25) {
+          player.achievements.push('Most Wickets 2023');
         }
-      },
-      achievements: ['Most Boundaries 2023']
-    },
-    {
-      id: 'p5',
-      name: 'Mohammed Ali',
-      team: 'Commerce Kings',
-      role: 'bowler',
-      jerseyNumber: 99,
-      profileImage: '/images/players/ali.jpg',
-      stats: {
-        overall: {
-          matches: 21,
-          bowling: {
-            innings: 21,
-            overs: 79.3,
-            wickets: 32,
-            runs: 398,
-            average: 12.43,
-            economy: 5.01,
-            bestBowling: '5/28',
-            fiveWickets: 1
-          }
+        if (player.stats.overall.bowling.fiveWickets > 0) {
+          player.achievements.push('5 Wicket Haul Hero');
         }
-      },
-      achievements: ['Most Wickets 2023']
-    },
-    {
-      id: 'p6',
-      name: 'Sunil Patel',
-      team: 'Engineering Titans',
-      role: 'wicketkeeper',
-      jerseyNumber: 17,
-      profileImage: '/images/players/sunil.jpg',
-      stats: {
-        overall: {
-          matches: 24,
-          batting: {
-            innings: 20,
-            runs: 478,
-            notOuts: 4,
-            highest: 75,
-            average: 29.87,
-            strikeRate: 134.2,
-            fifties: 3,
-            hundreds: 0
-          },
-          keeping: {
-            catches: 28,
-            stumpings: 12,
-            totalDismissals: 40
-          }
+        break;
+
+      case 'all-rounder':
+        player.stats.overall.batting = generateBattingStats('medium');
+        player.stats.overall.bowling = generateBowlingStats('medium');
+        if (parseFloat(player.stats.overall.batting.average) > 30 && 
+            player.stats.overall.bowling.wickets > 20) {
+          player.achievements.push('Best All-rounder 2023');
         }
-      },
-      achievements: ['Best Wicketkeeper 2023']
-    },
-    {
-      id: 'p7',
-      name: 'Rajesh Kumar',
-      team: 'Science Strikers',
-      role: 'all-rounder',
-      jerseyNumber: 33,
-      profileImage: '/images/players/rajesh.jpg',
-      stats: {
-        overall: {
-          matches: 19,
-          batting: {
-            innings: 17,
-            runs: 389,
-            notOuts: 3,
-            highest: 72,
-            average: 27.78,
-            strikeRate: 122.4,
-            fifties: 2
-          },
-          bowling: {
-            innings: 19,
-            overs: 68.2,
-            wickets: 24,
-            runs: 342,
-            average: 14.25,
-            economy: 5.01,
-            bestBowling: '4/29'
-          }
+        break;
+
+      case 'wicketkeeper':
+        player.stats.overall.batting = generateBattingStats('medium');
+        player.stats.overall.keeping = {
+          catches: Math.floor(Math.random() * 30 + 15),
+          stumpings: Math.floor(Math.random() * 15 + 5)
+        };
+        player.stats.overall.keeping.totalDismissals = 
+          player.stats.overall.keeping.catches + player.stats.overall.keeping.stumpings;
+        if (player.stats.overall.keeping.totalDismissals > 30) {
+          player.achievements.push('Best Wicketkeeper 2023');
         }
-      },
-      achievements: ['Match Winner Award 2023']
-    },
-    {
-      id: 'p8',
-      name: 'Sanjay Verma',
-      team: 'Management Masters',
-      role: 'bowler',
-      jerseyNumber: 88,
-      profileImage: '/images/players/sanjay.jpg',
-      stats: {
-        overall: {
-          matches: 20,
-          bowling: {
-            innings: 20,
-            overs: 75.1,
-            wickets: 29,
-            runs: 367,
-            average: 12.65,
-            economy: 4.89,
-            bestBowling: '5/31',
-            fiveWickets: 1
-          }
-        }
-      },
-      achievements: ['Best Economy Rate 2023']
-    },
-    {
-      id: 'p9',
-      name: 'Ajay Rathod',
-      team: 'Arts Avengers',
-      role: 'batsman',
-      jerseyNumber: 77,
-      profileImage: '/images/players/ajay.jpg',
-      stats: {
-        overall: {
-          matches: 22,
-          batting: {
-            innings: 22,
-            runs: 756,
-            notOuts: 3,
-            highest: 112,
-            average: 39.78,
-            strikeRate: 138.6,
-            fifties: 4,
-            hundreds: 1,
-            lastFiveScores: [112, 45, 67, 23, 89]
-          }
-        }
-      },
-      achievements: ['Most Consistent Batsman 2023']
-    },
-    {
-      id: 'p10',
-      name: 'Kiran Shah',
-      team: 'Commerce Kings',
-      role: 'all-rounder',
-      jerseyNumber: 55,
-      profileImage: '/images/players/kiran.jpg',
-      stats: {
-        overall: {
-          matches: 23,
-          batting: {
-            innings: 20,
-            runs: 445,
-            notOuts: 4,
-            highest: 86,
-            average: 27.81,
-            strikeRate: 129.7,
-            fifties: 2
-          },
-          bowling: {
-            innings: 23,
-            overs: 82.4,
-            wickets: 27,
-            runs: 412,
-            average: 15.25,
-            economy: 4.99,
-            bestBowling: '4/25'
-          }
-        }
-      },
-      achievements: ['Most Valuable Player 2023']
+        break;
     }
-  ];
+
+    return player;
+  });
+};
+
+export const samplePlayers = generatePlayersArray();
 
 const uploadPlayers = async () => {
   try {
@@ -310,11 +178,9 @@ const uploadPlayers = async () => {
     });
 
     await batch.commit();
-    console.log('Successfully uploaded players data');
+    console.log('Successfully uploaded 100 players to Firebase');
   } catch (error) {
     console.error('Error uploading players:', error);
-  } finally {
-    process.exit();
   }
 };
 

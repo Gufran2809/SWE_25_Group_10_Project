@@ -14,6 +14,7 @@ import TournamentDetail from './components/TournamentDetail';
 import MatchDetail from './components/MatchDetail';
 import LiveMatchView from './components/LiveMatchView';
 import MatchPreview from './components/MatchPreview';
+import ProfilePage from './components/ProfilePage';
 
 function App() {
   return (
@@ -64,6 +65,15 @@ function App() {
               <Navbar />
               <Notifications />
               <PlayerStats />
+            </ProtectedRoute>
+          } />
+
+          {/* Profile Route */}
+          <Route path="/profile" element={
+            <ProtectedRoute>
+              <Navbar />
+              <Notifications />
+              <ProfilePage />
             </ProtectedRoute>
           } />
           

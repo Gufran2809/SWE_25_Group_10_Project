@@ -71,6 +71,13 @@ const PlayerProfiles = () => {
 
   const renderPlayerStats = (player) => {
     const stats = player.stats.overall;
+    
+    const formatNumber = (value) => {
+      return typeof value === 'number' 
+        ? value.toFixed(2) 
+        : (value || '-');
+    };
+
     return (
       <Card sx={{ p: 2 }}>
         <CardContent>
@@ -96,7 +103,7 @@ const PlayerProfiles = () => {
           
           <Box sx={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 2 }}>
             <Typography>
-              <strong>Matches:</strong> {stats.matches}
+              <strong>Matches:</strong> {stats.matches || 0}
             </Typography>
             <Typography>
               <strong>Role:</strong> {player.role}
@@ -108,19 +115,19 @@ const PlayerProfiles = () => {
                   Batting Stats
                 </Typography>
                 <Typography>
-                  <strong>Runs:</strong> {stats.batting.runs}
+                  <strong>Runs:</strong> {stats.batting.runs || 0}
                 </Typography>
                 <Typography>
-                  <strong>Average:</strong> {stats.batting.average?.toFixed(2)}
+                  <strong>Average:</strong> {formatNumber(stats.batting.average)}
                 </Typography>
                 <Typography>
-                  <strong>Strike Rate:</strong> {stats.batting.strikeRate?.toFixed(2)}
+                  <strong>Strike Rate:</strong> {formatNumber(stats.batting.strikeRate)}
                 </Typography>
                 <Typography>
-                  <strong>Highest:</strong> {stats.batting.highest}
+                  <strong>Highest:</strong> {stats.batting.highest || 0}
                 </Typography>
                 <Typography>
-                  <strong>50s/100s:</strong> {stats.batting.fifties}/{stats.batting.hundreds}
+                  <strong>50s/100s:</strong> {stats.batting.fifties || 0}/{stats.batting.hundreds || 0}
                 </Typography>
               </>
             )}
@@ -131,19 +138,19 @@ const PlayerProfiles = () => {
                   Bowling Stats
                 </Typography>
                 <Typography>
-                  <strong>Wickets:</strong> {stats.bowling.wickets}
+                  <strong>Wickets:</strong> {stats.bowling.wickets || 0}
                 </Typography>
                 <Typography>
-                  <strong>Economy:</strong> {stats.bowling.economy?.toFixed(2)}
+                  <strong>Economy:</strong> {formatNumber(stats.bowling.economy)}
                 </Typography>
                 <Typography>
-                  <strong>Average:</strong> {stats.bowling.average?.toFixed(2)}
+                  <strong>Average:</strong> {formatNumber(stats.bowling.average)}
                 </Typography>
                 <Typography>
-                  <strong>Best Bowling:</strong> {stats.bowling.bestBowling}
+                  <strong>Best Bowling:</strong> {stats.bowling.bestBowling || '-'}
                 </Typography>
                 <Typography>
-                  <strong>5 Wickets:</strong> {stats.bowling.fiveWickets}
+                  <strong>5 Wickets:</strong> {stats.bowling.fiveWickets || 0}
                 </Typography>
               </>
             )}

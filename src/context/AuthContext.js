@@ -2,8 +2,8 @@ import React, { createContext, useState, useEffect } from 'react';
 import { auth, googleProvider, db } from '../firebase';
 import { 
   signInWithPopup, 
-  onAuthStateChanged,
-  GoogleAuthProvider 
+  signOut, 
+  onAuthStateChanged 
 } from 'firebase/auth';
 import { doc, getDoc, setDoc } from 'firebase/firestore';
 
@@ -15,35 +15,33 @@ export const AuthProvider = ({ children }) => {
 
   const login = async () => {
     try {
-      // Use the imported googleProvider instead of creating new one
       const result = await signInWithPopup(auth, googleProvider);
+      const userDoc = await getDoc(doc(db, 'users', result.user.uid));
       
-      // Get the user document reference
-      const userDocRef = doc(db, 'users', result.user.uid);
-      const userDoc = await getDoc(userDocRef);
-      
-      // Prepare user data
-      const userData = {
-        email: result.user.email,
-        displayName: result.user.displayName,
-        photoURL: result.user.photoURL,
-        role: 'Organizer', // Force role to Organizer
-        updatedAt: new Date()
-      };
-
       if (!userDoc.exists()) {
-        userData.createdAt = new Date();
+        // Create user document if it doesn't exist
+        await setDoc(doc(db, 'users', result.user.uid), {
+          email: result.user.email,
+          displayName: result.user.displayName,
+          photoURL: result.user.photoURL,
+          role: 'Player', // Default role
+          createdAt: new Date(),
+        });
       }
-
-      // Update or create user document
-      await setDoc(userDocRef, userData, { merge: true });
       
-      // Update local state
-      setUser({ ...result.user, role: userData.role });
       return result;
-
     } catch (error) {
       console.error('Auth error:', error);
+      throw error;
+    }
+  };
+
+  const logout = async () => {
+    try {
+      await signOut(auth);
+      setUser(null);
+    } catch (error) {
+      console.error('Logout error:', error);
       throw error;
     }
   };
@@ -72,6 +70,7 @@ export const AuthProvider = ({ children }) => {
   const value = {
     user,
     login,
+    logout,
     loading
   };
 

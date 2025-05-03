@@ -215,6 +215,35 @@ const MotionValue = ({ value, duration = 2 }) => {
   );
 };
 
+// Add this helper function at the top level
+const getMatchStatus = (matchData) => {
+  if (!matchData) return 'upcoming';
+
+  const totalOversTeam1 = parseFloat(matchData.score?.team1?.overs || '0');
+  const totalOversTeam2 = parseFloat(matchData.score?.team2?.overs || '0');
+  const maxOvers = matchData.overs || 20;
+
+  // Check if match is completed
+  const isFirstInningsComplete = totalOversTeam1 >= maxOvers || matchData.score?.team1?.wickets === 10;
+  const isSecondInningsComplete = (
+    totalOversTeam2 >= maxOvers || 
+    matchData.score?.team2?.wickets === 10 ||
+    (totalOversTeam2 > 0 && matchData.score?.team2?.runs > matchData.score?.team1?.runs)
+  );
+
+  // Match is complete only when both innings are finished
+  if (isFirstInningsComplete && isSecondInningsComplete) {
+    return 'completed';
+  }
+
+  // Check if match is live (any balls bowled)
+  if (totalOversTeam1 > 0 || totalOversTeam2 > 0) {
+    return 'live';
+  }
+
+  return 'upcoming';
+};
+
 const Home = () => {
   const { user } = useContext(AuthContext);
   const [matches, setMatches] = useState([]);
@@ -277,6 +306,18 @@ const Home = () => {
           const team1Score = data.score?.team1 || { runs: 0, wickets: 0, overs: "0.0" };
           const team2Score = data.score?.team2 || { runs: 0, wickets: 0, overs: "0.0" };
           
+          // Check if first ball has been bowled to determine if match is live
+          const hasStarted = data.currentOverBalls && 
+            Object.keys(data.currentOverBalls).length > 0 && 
+            data.currentOverBalls[0] && 
+            data.currentOverBalls[0].length > 0;
+
+          // Determine actual match status
+          let actualStatus = data.status;
+          if (data.status === 'Live' && !hasStarted) {
+            actualStatus = 'Upcoming';
+          }
+          
           return {
             id: doc.id,
             title: data.title || '',
@@ -284,7 +325,7 @@ const Home = () => {
             team2Id: data.team2Id,
             team1Score: `${team1Score.runs}/${team1Score.wickets} (${team1Score.overs})`,
             team2Score: `${team2Score.runs}/${team2Score.wickets} (${team2Score.overs})`,
-            status: data.status || 'Upcoming',
+            status: actualStatus,
             matchDate: data.date?.toDate() || new Date(),
             venue: data.venue || 'TBD',
             matchType: data.matchType || '',
@@ -292,7 +333,14 @@ const Home = () => {
             battingTeam: data.battingTeam,
             currentOver: data.currentOver,
             currentBall: data.currentBall,
-            leagueId: data.leagueId
+            battingStats: data.battingStats || {},
+            bowlingStats: data.bowlingStats || {},
+            currentPartnership: data.currentPartnership || { runs: 0, balls: 0 },
+            lastBall: data.lastBall || null,
+            leagueId: data.leagueId,
+            currentBatsman: data.currentBatsman,
+            currentBowler: data.currentBowler,
+            currentNonStriker: data.currentNonStriker
           };
         });
 
@@ -414,10 +462,24 @@ const Home = () => {
     setTabValue(newValue);
   };
 
+  // Update the filteredMatches function
   const filteredMatches = () => {
-    if (tabValue === 0) return matches.filter((m) => m.status === 'Live');
-    if (tabValue === 1) return matches.filter((m) => m.status === 'Upcoming');
-    if (tabValue === 2) return matches.filter((m) => m.status === 'Completed');
+    if (tabValue === 0) {
+      // Live matches - check if balls have been bowled
+      return matches
+        .filter(match => getMatchStatus(match) === 'live')
+        .sort((a, b) => new Date(b.matchDate) - new Date(a.matchDate));
+    }
+    if (tabValue === 1) {
+      return matches
+        .filter(match => getMatchStatus(match) === 'upcoming')
+        .sort((a, b) => new Date(a.matchDate) - new Date(b.matchDate));
+    }
+    if (tabValue === 2) {
+      return matches
+        .filter(match => getMatchStatus(match) === 'completed')
+        .sort((a, b) => new Date(b.matchDate) - new Date(a.matchDate));
+    }
     return matches;
   };
 
@@ -648,12 +710,12 @@ const Home = () => {
               {filteredMatches().length > 0 ? (
                 filteredMatches().map((match) => (
                   <Grid item xs={12} sm={6} md={4} key={match.id}>
-                    {match.status === 'Live' ? (
+                    {match.status === 'Live' && getMatchStatus(match) === 'live' ? (
                       <LiveMatchCard>
                         <CardContent sx={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
                           <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 1 }}>
                             <Typography variant="caption" color="text.secondary">
-                              {match.tournamentName}
+                              {match.matchType} • {match.venue}
                             </Typography>
                             <LiveIndicator>
                               <FiberManualRecordIcon fontSize="small" sx={{ mr: 0.5 }} />
@@ -661,6 +723,7 @@ const Home = () => {
                             </LiveIndicator>
                           </Box>
                           
+                          {/* Batting Team */}
                           <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 2 }}>
                             <Box sx={{ display: 'flex', alignItems: 'center' }}>
                               <Avatar src={match.team1Logo} alt={match.team1} sx={{ width: 32, height: 32, mr: 1 }} />
@@ -669,10 +732,26 @@ const Home = () => {
                               </Typography>
                             </Box>
                             <ScoreText variant="body2">
-                              {match.team1Score}
+                              {`${match.score.team1.runs}/${match.score.team1.wickets} (${match.score.team1.overs})`}
                             </ScoreText>
                           </Box>
                           
+                          {/* Current Partnership if available */}
+                          {match.currentPartnership && (
+                            <Typography variant="body2" color="error.main" sx={{ mb: 1 }}>
+                              Partnership: {match.currentPartnership.runs} ({match.currentPartnership.balls} balls)
+                            </Typography>
+                          )}
+
+                          {/* Current Batsmen if available */}
+                          {match.battingStats && match.currentBatsman && (
+                            <Typography variant="body2" sx={{ mb: 1 }}>
+                              {match.battingStats[match.currentBatsman]?.name} * 
+                              {` ${match.battingStats[match.currentBatsman]?.runs} (${match.battingStats[match.currentBatsman]?.ballsFaced})`}
+                            </Typography>
+                          )}
+                          
+                          {/* Bowling Team */}
                           <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 2 }}>
                             <Box sx={{ display: 'flex', alignItems: 'center' }}>
                               <Avatar src={match.team2Logo} alt={match.team2} sx={{ width: 32, height: 32, mr: 1 }} />
@@ -681,13 +760,17 @@ const Home = () => {
                               </Typography>
                             </Box>
                             <ScoreText variant="body2">
-                              {match.team2Score}
+                              {`${match.score.team2.runs}/${match.score.team2.wickets} (${match.score.team2.overs})`}
                             </ScoreText>
                           </Box>
                           
-                          <Typography variant="body2" color="text.secondary" gutterBottom>
-                            {match.venue}
-                          </Typography>
+                          {/* Current Bowler if available */}
+                          {match.bowlingStats && match.currentBowler && (
+                            <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+                              {match.bowlingStats[match.currentBowler]?.name}: {match.bowlingStats[match.currentBowler]?.wickets}/{match.bowlingStats[match.currentBowler]?.runs} 
+                              ({match.bowlingStats[match.currentBowler]?.overs})
+                            </Typography>
+                          )}
                           
                           <Box sx={{ mt: 'auto', display: 'flex', gap: 1 }}>
                             <Button
@@ -708,7 +791,7 @@ const Home = () => {
                               size="small"
                               sx={{ borderRadius: '20px', textTransform: 'none' }}
                             >
-                              View Scorecard
+                              Scorecard
                             </Button>
                           </Box>
                         </CardContent>
@@ -956,7 +1039,9 @@ const Home = () => {
                           Average
                         </Typography>
                         <Typography variant="h6" color="text.primary">
-                          {player.stats.batting.average?.toFixed(2) || 0}
+                          {typeof player.stats.batting.average === 'number' 
+                            ? player.stats.batting.average.toFixed(2) 
+                            : player.stats.batting.average || '0.00'}
                         </Typography>
                       </Grid>
                       
@@ -965,7 +1050,9 @@ const Home = () => {
                           Strike Rate
                         </Typography>
                         <Typography variant="h6" color="text.primary">
-                          {player.stats.batting.strikeRate?.toFixed(1) || 0}
+                          {typeof player.stats.batting.strikeRate === 'number' 
+                            ? player.stats.batting.strikeRate.toFixed(1) 
+                            : player.stats.batting.strikeRate || '0.0'}
                         </Typography>
                       </Grid>
                     </>
@@ -987,7 +1074,9 @@ const Home = () => {
                           Economy
                         </Typography>
                         <Typography variant="h6" color="text.primary">
-                          {player.stats.bowling.economy?.toFixed(2) || 0}
+                          {typeof player.stats.bowling.economy === 'number' 
+                            ? player.stats.bowling.economy.toFixed(2) 
+                            : player.stats.bowling.economy || '0.00'}
                         </Typography>
                       </Grid>
                     </>

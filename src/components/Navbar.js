@@ -67,9 +67,14 @@ const Navbar = () => {
     setAnchorEl(null);
   };
 
-  const handleLogout = () => {
-    handleProfileMenuClose();
-    logout();
+  const handleLogout = async () => {
+    try {
+      handleProfileMenuClose();
+      await logout();
+    } catch (error) {
+      console.error('Logout error:', error);
+      // Optionally show an error message to the user
+    }
   };
 
   const toggleDrawer = (open) => () => {

@@ -192,13 +192,20 @@ const PlayerStats = () => {
                   <TableCell>{index + 1}</TableCell>
                   <TableCell>{player.name}</TableCell>
                   <TableCell>{player.team}</TableCell>
-                  <TableCell>{player.stats.overall.matches}</TableCell>
-                  <TableCell>{player.stats.overall.batting.runs}</TableCell>
-                  <TableCell>{player.stats.overall.batting.average?.toFixed(2) ?? '-'}</TableCell>
-                  <TableCell>{player.stats.overall.batting.strikeRate?.toFixed(2) ?? '-'}</TableCell>
+                  <TableCell>{player.stats.overall.matches || 0}</TableCell>
+                  <TableCell>{player.stats.overall.batting.runs || 0}</TableCell>
                   <TableCell>
-                    {player.stats.overall.batting.fifties ?? 0}/
-                    {player.stats.overall.batting.hundreds ?? 0}
+                    {typeof player.stats.overall.batting.average === 'number' 
+                      ? player.stats.overall.batting.average.toFixed(2) 
+                      : (player.stats.overall.batting.average || '-')}
+                  </TableCell>
+                  <TableCell>
+                    {typeof player.stats.overall.batting.strikeRate === 'number'
+                      ? player.stats.overall.batting.strikeRate.toFixed(2)
+                      : (player.stats.overall.batting.strikeRate || '-')}
+                  </TableCell>
+                  <TableCell>
+                    {`${player.stats.overall.batting.fifties || 0}/${player.stats.overall.batting.hundreds || 0}`}
                   </TableCell>
                   <TableCell>{getTrendIcon(player.form)}</TableCell>
                 </TableRow>
@@ -296,8 +303,16 @@ const PlayerStats = () => {
                   <TableCell>{player.team}</TableCell>
                   <TableCell>{player.stats.overall.matches}</TableCell>
                   <TableCell><strong>{player.stats.overall.bowling.wickets}</strong></TableCell>
-                  <TableCell>{player.stats.overall.bowling.average?.toFixed(2) ?? '-'}</TableCell>
-                  <TableCell>{player.stats.overall.bowling.economy?.toFixed(2) ?? '-'}</TableCell>
+                  <TableCell>
+                    {typeof player.stats.overall.bowling.average === 'number'
+                      ? player.stats.overall.bowling.average.toFixed(2)
+                      : (player.stats.overall.bowling.average || '-')}
+                  </TableCell>
+                  <TableCell>
+                    {typeof player.stats.overall.bowling.economy === 'number'
+                      ? player.stats.overall.bowling.economy.toFixed(2)
+                      : (player.stats.overall.bowling.economy || '-')}
+                  </TableCell>
                   <TableCell>{player.stats.overall.bowling.bestBowling}</TableCell>
                   <TableCell>{getTrendIcon(player.form)}</TableCell>
                 </TableRow>
@@ -391,9 +406,17 @@ const PlayerStats = () => {
                   <TableCell>{player.team}</TableCell>
                   <TableCell>{player.stats.overall.matches}</TableCell>
                   <TableCell>{player.stats.overall.batting.runs}</TableCell>
-                  <TableCell>{player.stats.overall.batting.average?.toFixed(2) ?? '-'}</TableCell>
+                  <TableCell>
+                    {typeof player.stats.overall.batting.average === 'number'
+                      ? player.stats.overall.batting.average.toFixed(2)
+                      : (player.stats.overall.batting.average || '-')}
+                  </TableCell>
                   <TableCell>{player.stats.overall.bowling.wickets}</TableCell>
-                  <TableCell>{player.stats.overall.bowling.average?.toFixed(2) ?? '-'}</TableCell>
+                  <TableCell>
+                    {typeof player.stats.overall.bowling.average === 'number'
+                      ? player.stats.overall.bowling.average.toFixed(2)
+                      : (player.stats.overall.bowling.average || '-')}
+                  </TableCell>
                   <TableCell>{getTrendIcon(player.form)}</TableCell>
                 </TableRow>
               ))
